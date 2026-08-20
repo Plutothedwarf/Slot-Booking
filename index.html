@@ -98,15 +98,19 @@ function render() {
     <div class="panel">
       <div class="field-row">
         <div class="field">
-          <label for="nameInput">Your name</label>
-          <input id="nameInput" type="text" placeholder="Full name" ${r.locked ? 'disabled' : ''}>
+          <label for="firstNameInput">First name</label>
+          <input id="firstNameInput" type="text" placeholder="First name" ${r.locked ? 'disabled' : ''}>
         </div>
         <div class="field">
-          <label for="mobileInput">Mobile number</label>
-          <input id="mobileInput" type="tel" placeholder="Optional but recommended" ${r.locked ? 'disabled' : ''}>
+          <label for="surnameInput">Surname</label>
+          <input id="surnameInput" type="text" placeholder="Surname" ${r.locked ? 'disabled' : ''}>
         </div>
       </div>
-      <p class="sub" style="font-size:0.82rem;margin-bottom:1rem;">Adding your mobile number lets you find and change your slot later from any device.</p>
+      <div class="field">
+        <label for="mobileInput">Mobile number</label>
+        <input id="mobileInput" type="tel" placeholder="e.g. 98765 43210" ${r.locked ? 'disabled' : ''}>
+      </div>
+      <p class="sub" style="font-size:0.82rem;margin-bottom:1rem;">Your mobile number lets you find and change your slot later from any device.</p>
       <div id="banner"></div>
       <h2 style="margin-top:0.5rem;">Pick a time</h2>
       <ul class="slot-list" id="slotList"></ul>
@@ -160,12 +164,18 @@ function selectSlot(slot, form) {
 }
 
 async function confirmBooking(form) {
-  const name = form.querySelector('#nameInput').value.trim();
+  const first = form.querySelector('#firstNameInput').value.trim();
+  const last = form.querySelector('#surnameInput').value.trim();
   const mobile = form.querySelector('#mobileInput').value.trim();
+  const name = [first, last].filter(Boolean).join(' ');
   const banner = form.querySelector('#banner');
   banner.innerHTML = '';
-  if (!name) {
-    banner.appendChild(el(`<div class="banner error">Please enter your name.</div>`));
+  if (!first || !last) {
+    banner.appendChild(el(`<div class="banner error">Please enter your first name and surname.</div>`));
+    return;
+  }
+  if (!mobile) {
+    banner.appendChild(el(`<div class="banner error">Please enter your mobile number.</div>`));
     return;
   }
   if (!state.selectedSlot) return;
@@ -184,8 +194,10 @@ async function confirmBooking(form) {
 }
 
 async function findMyBooking(form) {
-  const name = form.querySelector('#nameInput').value.trim();
+  const first = form.querySelector('#firstNameInput').value.trim();
+  const last = form.querySelector('#surnameInput').value.trim();
   const mobile = form.querySelector('#mobileInput').value.trim();
+  const name = [first, last].filter(Boolean).join(' ');
   const banner = form.querySelector('#banner');
   banner.innerHTML = '';
   if (!name && !mobile) {
