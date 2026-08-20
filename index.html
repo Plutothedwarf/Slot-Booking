@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slot Signup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap" id="app">
+  <p class="eyebrow">Loading&hellip;</p>
+</div>
+
+<script src="config.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const roomId = params.get('room');
+const app = document.getElementById('app');
+
+let state = { room: null, selectedSlot: null, name: '', mobile: '', myBookingId: null };
+
+function el(html) {
+  const t = document.createElement('template');
+  t.innerHTML = html.trim();
+  return t.content.firstChild;
+}
+
+async function init() {
+  if (!roomId) return renderRoomPicker();
+  await loadRoom();
+}
+
+async function renderRoomPicker() {
+  app.innerHTML = `<p class="eyebrow">Slot Signup</p><h1>Choose an event</h1><p class="sub">No event was specified in the link.</p><div id="rooms" class="rule"></div>`;
+  const rooms = await api('getRooms', {});
+  const list = document.getElementById('rooms');
+  if (!rooms.length) {
+    list.appendChild(el(`<div class="empty-state">No events are open right now.</div>`));
+    return;
+  }
+  rooms.forEach(r => {
+    list.appendChild(el(`
+      <div class="room-card">
+        <div>
+          <div class="name">${escapeHtml(r.room_name)}</div>
+          <div class="meta">${escapeHtml(r.date || '')}</div>
+        </div>
+        <div class="actions">
+          <span class="pill ${r.locked ? 'locked' : 'open'}">${r.locked ? 'Closed' : 'Open'}</span>
+          <a href="?room=${encodeURIComponent(r.room_id)}"><button class="secondary">Open</button></a>
+        </div>
+      </div>
+    `));
+  });
+}
+
+async function loadRoom() {
+  const data = await api('getRoom', { roomId });
+  if (data.error) {
+    app.innerHTML = `<div class="empty-state">${escapeHtml(data.error)}</div>`;
+    return;
+  }
+  state.room = data;
+  render();
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function fmtLabel(t) {
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+function render() {
+  const r = state.room;
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <p class="eyebrow">Slot Signup</p>
+    <h1>${escapeHtml(r.room_name)}</h1>
+    <p class="sub">${escapeHtml(r.date || '')}</p>
+  `));
+
+  if (r.locked) {
+    app.appendChild(el(`<div class="banner locked">Bookings are closed for this event. Contact the organiser if you need a change.</div>`));
+  }
+
+  app.appendChild(el(`<hr class="rule">`));
+
+  const form = el(`
+    <div class="panel">
+      <div class="field-row">
+        <div class="field">
+          <label for="nameInput">Your name</label>
+          <input id="nameInput" type="text" placeholder="Full name" ${r.locked ? 'disabled' : ''}>
+        </div>
+        <div class="field">
+          <label for="mobileInput">Mobile number</label>
+          <input id="mobileInput" type="tel" placeholder="Optional but recommended" ${r.locked ? 'disabled' : ''}>
+        </div>
+      </div>
+      <p class="sub" style="font-size:0.82rem;margin-bottom:1rem;">Adding your mobile number lets you find and change your slot later from any device.</p>
+      <div id="banner"></div>
+      <h2 style="margin-top:0.5rem;">Pick a time</h2>
+      <ul class="slot-list" id="slotList"></ul>
+      <div style="margin-top:1.25rem; display:flex; gap:0.6rem;">
+        <button id="confirmBtn" disabled>Confirm slot</button>
+        <button id="findBtn" class="ghost" type="button">I already booked &mdash; find my slot</button>
+      </div>
+    </div>
+  `);
+  app.appendChild(form);
+
+  app.appendChild(el(`<footer class="nav-back"><a href="?">&larr; All events</a></footer>`));
+
+  const slotList = form.querySelector('#slotList');
+  r.slots.forEach(s => {
+    const row = el(`
+      <li>
+        <button class="slot-row" data-slot="${s.slot_start}" ${(s.full || r.locked) ? 'disabled' : ''}>
+          <span class="slot-time">${fmtLabel(s.slot_start)}</span>
+          <span class="slot-ticks">${ticks(s.taken, s.capacity)}</span>
+          <span class="slot-status ${s.full ? 'full' : ''}">${s.full ? 'Full' : (s.capacity - s.taken) + ' left'}</span>
+        </button>
+      </li>
+    `);
+    row.querySelector('.slot-row').addEventListener('click', () => selectSlot(s.slot_start, form));
+    slotList.appendChild(row);
+  });
+
+  form.querySelector('#confirmBtn').addEventListener('click', () => confirmBooking(form));
+  form.querySelector('#findBtn').addEventListener('click', () => findMyBooking(form));
+}
+
+function ticks(taken, capacity) {
+  let html = '';
+  for (let i = 0; i < capacity; i++) {
+    const isFull = taken >= capacity;
+    html += `<span class="tick ${i < taken ? 'filled' : ''} ${isFull ? 'full-tick' : ''}"></span>`;
+  }
+  return html;
+}
+
+function selectSlot(slot, form) {
+  state.selectedSlot = slot;
+  form.querySelectorAll('.slot-row').forEach(b => b.style.background = 'none');
+  const target = form.querySelector(`.slot-row[data-slot="${slot}"]`);
+  if (target) target.style.background = '#EFE6CE';
+  form.querySelector('.slot-status.selected')?.classList.remove('selected');
+  target.querySelector('.slot-status').classList.add('selected');
+  target.querySelector('.slot-status').textContent = 'Selected';
+  form.querySelector('#confirmBtn').disabled = false;
+}
+
+async function confirmBooking(form) {
+  const name = form.querySelector('#nameInput').value.trim();
+  const mobile = form.querySelector('#mobileInput').value.trim();
+  const banner = form.querySelector('#banner');
+  banner.innerHTML = '';
+  if (!name) {
+    banner.appendChild(el(`<div class="banner error">Please enter your name.</div>`));
+    return;
+  }
+  if (!state.selectedSlot) return;
+  const btn = form.querySelector('#confirmBtn');
+  btn.disabled = true; btn.textContent = 'Booking…';
+  const res = await api('bookSlot', { roomId, name, mobile, slot_start: state.selectedSlot });
+  if (res.error) {
+    banner.appendChild(el(`<div class="banner error">${escapeHtml(res.error)}</div>`));
+    btn.disabled = false; btn.textContent = 'Confirm slot';
+    await loadRoom();
+    return;
+  }
+  banner.appendChild(el(`<div class="banner success">${res.updated ? 'Your slot has been updated to' : "You're booked for"} ${fmtLabel(state.selectedSlot)}. You can come back and change it anytime before the organiser locks bookings.</div>`));
+  btn.textContent = 'Confirm slot';
+  await loadRoom();
+}
+
+async function findMyBooking(form) {
+  const name = form.querySelector('#nameInput').value.trim();
+  const mobile = form.querySelector('#mobileInput').value.trim();
+  const banner = form.querySelector('#banner');
+  banner.innerHTML = '';
+  if (!name && !mobile) {
+    banner.appendChild(el(`<div class="banner error">Enter your name or mobile number first.</div>`));
+    return;
+  }
+  const res = await api('myBooking', { roomId, name, mobile });
+  if (!res.found) {
+    banner.appendChild(el(`<div class="banner error">No booking found under that name or number.</div>`));
+    return;
+  }
+  banner.appendChild(el(`<div class="banner success">You're booked for ${fmtLabel(res.slot_start)}. Pick a different slot below to move it.</div>`));
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Slot Signup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script src="config.js"></script>
+<script>
+let password = sessionStorage.getItem('admin_pw') || '';
+let view = 'rooms'; // 'rooms' | 'room'
+let currentRoomId = null;
+const app = document.getElementById('app');
+
+function el(html) {
+  const t = document.createElement('template');
+  t.innerHTML = html.trim();
+  return t.content.firstChild;
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtLabel(t) {
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+async function init() {
+  if (!password) return renderLogin();
+  const check = await api('adminLogin', { password });
+  if (!check.ok) return renderLogin('Wrong password.');
+  renderRoomsList();
+}
+
+function renderLogin(error) {
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <p class="eyebrow">Slot Signup</p>
+    <h1>Admin sign in</h1>
+    <div class="panel" style="max-width:360px;">
+      ${error ? `<div class="banner error">${escapeHtml(error)}</div>` : ''}
+      <div class="field">
+        <label for="pw">Admin password</label>
+        <input id="pw" type="password">
+      </div>
+      <button id="loginBtn">Sign in</button>
+    </div>
+  `));
+  app.querySelector('#loginBtn').addEventListener('click', async () => {
+    const pw = app.querySelector('#pw').value;
+    const res = await api('adminLogin', { password: pw });
+    if (!res.ok) return renderLogin('Wrong password.');
+    password = pw;
+    sessionStorage.setItem('admin_pw', pw);
+    renderRoomsList();
+  });
+}
+
+async function renderRoomsList() {
+  app.innerHTML = `<p class="eyebrow">Slot Signup — Admin</p><h1>Your events</h1><div id="rooms"></div><hr class="rule"><h2>Create a new event</h2><div id="createForm"></div>`;
+  const rooms = await api('getRooms', {});
+  const list = app.querySelector('#rooms');
+  if (!rooms.length) {
+    list.appendChild(el(`<div class="empty-state">No events yet — create one below.</div>`));
+  }
+  rooms.forEach(r => {
+    const card = el(`
+      <div class="room-card">
+        <div>
+          <div class="name">${escapeHtml(r.room_name)}</div>
+          <div class="meta">${escapeHtml(r.date || '')}</div>
+        </div>
+        <div class="actions">
+          <span class="pill ${r.locked ? 'locked' : 'open'}">${r.locked ? 'Closed' : 'Open'}</span>
+          <button class="secondary manage-btn">Manage</button>
+        </div>
+      </div>
+    `);
+    card.querySelector('.manage-btn').addEventListener('click', () => renderRoom(r.room_id));
+    list.appendChild(card);
+  });
+
+  const form = el(`
+    <div class="panel">
+      <div id="createBanner"></div>
+      <div class="field"><label>Event name</label><input id="c_name" type="text" placeholder="e.g. Turncoat Debate — Aug 30"></div>
+      <div class="field"><label>Date (optional, shown to participants)</label><input id="c_date" type="text" placeholder="e.g. 30 Aug 2026"></div>
+      <div class="field-row">
+        <div class="field"><label>Start time</label><input id="c_start" type="time" value="12:00"></div>
+        <div class="field"><label>End time</label><input id="c_end" type="time" value="17:00"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Slot length (minutes)</label><input id="c_interval" type="number" min="5" step="5" value="30"></div>
+        <div class="field"><label>Capacity per slot</label><input id="c_capacity" type="number" min="1" value="15"></div>
+      </div>
+      <button id="createBtn">Create event</button>
+    </div>
+  `);
+  form.querySelector('#createBtn').addEventListener('click', async () => {
+    const banner = form.querySelector('#createBanner');
+    banner.innerHTML = '';
+    const name = form.querySelector('#c_name').value.trim();
+    if (!name) { banner.appendChild(el(`<div class="banner error">Event name is required.</div>`)); return; }
+    const payload = {
+      password,
+      room_name: name,
+      date: form.querySelector('#c_date').value.trim(),
+      start_time: form.querySelector('#c_start').value,
+      end_time: form.querySelector('#c_end').value,
+      interval_minutes: Number(form.querySelector('#c_interval').value),
+      capacity: Number(form.querySelector('#c_capacity').value)
+    };
+    const res = await api('adminCreateRoom', payload);
+    if (res.error) { banner.appendChild(el(`<div class="banner error">${escapeHtml(res.error)}</div>`)); return; }
+    renderRoom(res.room_id);
+  });
+  app.querySelector('#createForm').appendChild(form);
+}
+
+async function renderRoom(roomId) {
+  currentRoomId = roomId;
+  app.innerHTML = `<p class="eyebrow">Loading&hellip;</p>`;
+  const r = await api('adminGetRoom', { roomId, password });
+  if (r.error) { app.innerHTML = `<div class="empty-state">${escapeHtml(r.error)}</div>`; return; }
+
+  const shareUrl = location.origin + location.pathname.replace('admin.html', 'index.html') + '?room=' + roomId;
+
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <p class="eyebrow">Slot Signup — Admin</p>
+    <h1>${escapeHtml(r.room_name)}</h1>
+    <p class="sub">${escapeHtml(r.date || '')}</p>
+  `));
+
+  const toolbar = el(`
+    <div class="panel" style="margin:1.25rem 0;">
+      <div class="field"><label>Share this link with participants</label><input readonly value="${escapeHtml(shareUrl)}" onclick="this.select()"></div>
+      <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+        <button id="lockBtn" class="secondary">${r.locked ? 'Unlock bookings' : 'Lock bookings'}</button>
+        <button id="exportBtn" class="secondary">Export CSV</button>
+        <button id="deleteRoomBtn" class="ghost">Delete event</button>
+      </div>
+    </div>
+  `);
+  toolbar.querySelector('#lockBtn').addEventListener('click', async () => {
+    await api('adminToggleLock', { roomId, password, locked: !r.locked });
+    renderRoom(roomId);
+  });
+  toolbar.querySelector('#exportBtn').addEventListener('click', async () => {
+    const res = await api('adminExportCsv', { roomId, password });
+    if (res.error) return alert(res.error);
+    const blob = new Blob([res.csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = res.filename;
+    a.click();
+  });
+  toolbar.querySelector('#deleteRoomBtn').addEventListener('click', async () => {
+    if (!confirm('Delete this event and all its bookings? This cannot be undone.')) return;
+    await api('adminDeleteRoom', { roomId, password });
+    renderRoomsList();
+  });
+  app.appendChild(toolbar);
+
+  const allSlots = r.slots.map(s => s.slot_start);
+  const slotWrap = el(`<div id="slotWrap"></div>`);
+  r.slots.forEach(s => {
+    const block = el(`
+      <div class="admin-slot">
+        <div class="admin-slot-head">
+          <span>${fmtLabel(s.slot_start)}</span>
+          <span>${s.bookings.length} / ${s.capacity}</span>
+        </div>
+        <div class="bookings-for-slot"></div>
+      </div>
+    `);
+    const bwrap = block.querySelector('.bookings-for-slot');
+    if (!s.bookings.length) {
+      bwrap.appendChild(el(`<div class="admin-booking-row"><span class="mobile">No one booked yet</span></div>`));
+    }
+    s.bookings.forEach(b => {
+      const row = el(`
+        <div class="admin-booking-row">
+          <div>
+            <div class="name">${escapeHtml(b.name)}</div>
+            ${b.mobile ? `<div class="mobile">${escapeHtml(b.mobile)}</div>` : ''}
+          </div>
+          <div class="actions">
+            <select class="moveSelect">
+              ${allSlots.map(t => `<option value="${t}" ${t === s.slot_start ? 'selected' : ''}>${fmtLabel(t)}</option>`).join('')}
+            </select>
+            <button class="ghost removeBtn">Remove</button>
+          </div>
+        </div>
+      `);
+      row.querySelector('.moveSelect').addEventListener('change', async (e) => {
+        const res = await api('adminMoveBooking', { roomId, password, bookingId: b.booking_id, newSlot: e.target.value });
+        if (res.error) { alert(res.error); }
+        renderRoom(roomId);
+      });
+      row.querySelector('.removeBtn').addEventListener('click', async () => {
+        if (!confirm(`Remove ${b.name} from this slot?`)) return;
+        await api('adminDeleteBooking', { roomId, password, bookingId: b.booking_id });
+        renderRoom(roomId);
+      });
+      bwrap.appendChild(row);
+    });
+    slotWrap.appendChild(block);
+  });
+  app.appendChild(slotWrap);
+
+  app.appendChild(el(`<footer class="nav-back"><a href="#" id="backLink">&larr; All events</a></footer>`));
+  app.querySelector('#backLink').addEventListener('click', (e) => { e.preventDefault(); renderRoomsList(); });
+}
+
+init();
+</script>
+</body>
+</html>
