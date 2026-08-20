@@ -43,15 +43,17 @@ async function init() {
 function renderLogin(error) {
   app.innerHTML = '';
   app.appendChild(el(`
-    <p class="eyebrow">Slot Signup</p>
-    <h1>Admin sign in</h1>
-    <div class="panel" style="max-width:360px;">
-      ${error ? `<div class="banner error">${escapeHtml(error)}</div>` : ''}
-      <div class="field">
-        <label for="pw">Admin password</label>
-        <input id="pw" type="password">
+    <div>
+      <p class="eyebrow">Slot Signup</p>
+      <h1>Admin sign in</h1>
+      <div class="panel" style="max-width:360px;">
+        ${error ? `<div class="banner error">${escapeHtml(error)}</div>` : ''}
+        <div class="field">
+          <label for="pw">Admin password</label>
+          <input id="pw" type="password">
+        </div>
+        <button id="loginBtn">Sign in</button>
       </div>
-      <button id="loginBtn">Sign in</button>
     </div>
   `));
   app.querySelector('#loginBtn').addEventListener('click', async () => {
@@ -135,9 +137,11 @@ async function renderRoom(roomId) {
 
   app.innerHTML = '';
   app.appendChild(el(`
-    <p class="eyebrow">Slot Signup — Admin</p>
-    <h1>${escapeHtml(r.room_name)}</h1>
-    <p class="sub">${escapeHtml(r.date || '')}</p>
+    <div>
+      <p class="eyebrow">Slot Signup — Admin</p>
+      <h1>${escapeHtml(r.room_name)}</h1>
+      <p class="sub">${escapeHtml(r.date || '')}</p>
+    </div>
   `));
 
   const toolbar = el(`

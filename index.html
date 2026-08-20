@@ -81,9 +81,11 @@ function render() {
   const r = state.room;
   app.innerHTML = '';
   app.appendChild(el(`
-    <p class="eyebrow">Slot Signup</p>
-    <h1>${escapeHtml(r.room_name)}</h1>
-    <p class="sub">${escapeHtml(r.date || '')}</p>
+    <div>
+      <p class="eyebrow">Slot Signup</p>
+      <h1>${escapeHtml(r.room_name)}</h1>
+      <p class="sub">${escapeHtml(r.date || '')}</p>
+    </div>
   `));
 
   if (r.locked) {
