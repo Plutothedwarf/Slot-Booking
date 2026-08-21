@@ -152,12 +152,24 @@ function render() {
 
 function selectSlot(slot, form) {
   state.selectedSlot = slot;
-  form.querySelectorAll('.slot-row').forEach(b => b.style.background = 'none');
-  const target = form.querySelector(`.slot-row[data-slot="${slot}"]`);
-  if (target) target.style.background = '#EFE6CE';
-  form.querySelector('.slot-status.selected')?.classList.remove('selected');
-  target.querySelector('.slot-status').classList.add('selected');
-  target.querySelector('.slot-status').textContent = 'Selected';
+  form.querySelectorAll('.slot-row').forEach(row => {
+    const s = row.dataset.slot;
+    const info = state.room.slots.find(x => x.slot_start === s);
+    const statusEl = row.querySelector('.slot-status');
+    if (s === slot) {
+      row.style.background = '#EFE6CE';
+      statusEl.textContent = 'Selected';
+      statusEl.classList.add('selected');
+      statusEl.classList.remove('full');
+    } else {
+      row.style.background = 'none';
+      statusEl.classList.remove('selected');
+      if (info) {
+        statusEl.textContent = info.full ? 'Full' : (info.capacity - info.taken) + ' left';
+        statusEl.classList.toggle('full', info.full);
+      }
+    }
+  });
   form.querySelector('#confirmBtn').disabled = false;
 }
 
