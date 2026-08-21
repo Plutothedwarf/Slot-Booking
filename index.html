@@ -112,7 +112,10 @@ function render() {
       </div>
       <p class="sub" style="font-size:0.82rem;margin-bottom:1rem;">Your mobile number lets you find and change your slot later from any device.</p>
       <div id="banner"></div>
-      <h2 style="margin-top:0.5rem;">Pick a time</h2>
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:0.5rem;">
+        <h2 style="margin:0;">Pick a time</h2>
+        <button type="button" id="refreshBtn" class="ghost" style="padding:0.3rem 0.6rem; font-size:0.78rem;">Refresh</button>
+      </div>
       <ul class="slot-list" id="slotList"></ul>
       <div style="margin-top:1.25rem; display:flex; gap:0.6rem;">
         <button id="confirmBtn" disabled>Confirm slot</button>
@@ -130,7 +133,10 @@ function render() {
       <li>
         <button class="slot-row" data-slot="${s.slot_start}" ${(s.full || r.locked) ? 'disabled' : ''}>
           <span class="slot-time">${fmtLabel(s.slot_start)}</span>
-          <span class="slot-ticks">${ticks(s.taken, s.capacity)}</span>
+          <span class="capacity-bar-wrap">
+            <span class="capacity-bar-track"><span class="capacity-bar-fill ${s.full ? 'full-fill' : ''}" style="width:${Math.min(100, (s.taken / s.capacity) * 100)}%"></span></span>
+            <span class="capacity-count">${s.taken}/${s.capacity}</span>
+          </span>
           <span class="slot-status ${s.full ? 'full' : ''}">${s.full ? 'Full' : (s.capacity - s.taken) + ' left'}</span>
         </button>
       </li>
@@ -141,15 +147,7 @@ function render() {
 
   form.querySelector('#confirmBtn').addEventListener('click', () => confirmBooking(form));
   form.querySelector('#findBtn').addEventListener('click', () => findMyBooking(form));
-}
-
-function ticks(taken, capacity) {
-  let html = '';
-  for (let i = 0; i < capacity; i++) {
-    const isFull = taken >= capacity;
-    html += `<span class="tick ${i < taken ? 'filled' : ''} ${isFull ? 'full-tick' : ''}"></span>`;
-  }
-  return html;
+  form.querySelector('#refreshBtn').addEventListener('click', () => loadRoom());
 }
 
 function selectSlot(slot, form) {

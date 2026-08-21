@@ -126,30 +126,45 @@ button:hover:not(:disabled) { filter: brightness(1.15); }
   border-left: none; border-right: none; border-top: none;
   width: 100%;
   text-align: left;
+  color: var(--ink);
 }
 .slot-row:last-child { border-bottom: none; }
-.slot-row:disabled { cursor: not-allowed; }
+.slot-row:disabled { cursor: not-allowed; color: var(--ink-soft); }
 
 .slot-time {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.95rem;
   font-weight: 600;
   min-width: 4.5rem;
+  color: var(--ink);
 }
 
-.slot-ticks {
+.capacity-bar-wrap {
   flex: 1;
   display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
+  align-items: center;
+  gap: 0.6rem;
 }
-.tick {
-  width: 8px; height: 14px;
+.capacity-bar-track {
+  flex: 1;
+  height: 8px;
   background: var(--rule);
-  border-radius: 1px;
+  border-radius: 100px;
+  overflow: hidden;
 }
-.tick.filled { background: var(--brass); }
-.tick.filled.full-tick { background: var(--full); }
+.capacity-bar-fill {
+  height: 100%;
+  background: var(--brass);
+  border-radius: 100px;
+}
+.capacity-bar-fill.full-fill { background: var(--full); }
+.capacity-count {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  min-width: 3.2rem;
+  text-align: right;
+}
 
 .slot-status {
   font-family: 'IBM Plex Mono', monospace;

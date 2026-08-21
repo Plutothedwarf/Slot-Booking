@@ -150,10 +150,12 @@ async function renderRoom(roomId) {
       <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
         <button id="lockBtn" class="secondary">${r.locked ? 'Unlock bookings' : 'Lock bookings'}</button>
         <button id="exportBtn" class="secondary">Export CSV</button>
+        <button id="refreshBtn" class="secondary">Refresh</button>
         <button id="deleteRoomBtn" class="ghost">Delete event</button>
       </div>
     </div>
   `);
+  toolbar.querySelector('#refreshBtn').addEventListener('click', () => renderRoom(roomId));
   toolbar.querySelector('#lockBtn').addEventListener('click', async () => {
     await api('adminToggleLock', { roomId, password, locked: !r.locked });
     renderRoom(roomId);
@@ -220,6 +222,51 @@ async function renderRoom(roomId) {
     slotWrap.appendChild(block);
   });
   app.appendChild(slotWrap);
+
+  if (r.orphaned && r.orphaned.length) {
+    const orphanBlock = el(`
+      <div class="admin-slot" style="border-color:var(--full);">
+        <div class="admin-slot-head" style="background:#F4E3DF; color:var(--full);">
+          <span>Unassigned bookings — needs review</span>
+          <span>${r.orphaned.length}</span>
+        </div>
+        <div class="bookings-for-slot"></div>
+      </div>
+    `);
+    const owrap = orphanBlock.querySelector('.bookings-for-slot');
+    r.orphaned.forEach(b => {
+      const row = el(`
+        <div class="admin-booking-row">
+          <div>
+            <div class="name">${escapeHtml(b.name)}</div>
+            ${b.mobile ? `<div class="mobile">${escapeHtml(b.mobile)}</div>` : ''}
+            <div class="mobile">stored time: ${escapeHtml(b.slot_start)}</div>
+          </div>
+          <div class="actions">
+            <select class="moveSelect">
+              <option value="">Assign to slot…</option>
+              ${allSlots.map(t => `<option value="${t}">${fmtLabel(t)}</option>`).join('')}
+            </select>
+            <button class="ghost removeBtn">Remove</button>
+          </div>
+        </div>
+      `);
+      row.querySelector('.moveSelect').addEventListener('change', async (e) => {
+        if (!e.target.value) return;
+        const res = await api('adminMoveBooking', { roomId, password, bookingId: b.booking_id, newSlot: e.target.value });
+        if (res.error) { alert(res.error); }
+        renderRoom(roomId);
+      });
+      row.querySelector('.removeBtn').addEventListener('click', async () => {
+        if (!confirm(`Remove ${b.name}?`)) return;
+        await api('adminDeleteBooking', { roomId, password, bookingId: b.booking_id });
+        renderRoom(roomId);
+      });
+      owrap.appendChild(row);
+    });
+    app.appendChild(el(`<p class="sub" style="font-size:0.82rem; margin-top:0.75rem;">These bookings exist but don't match any current time slot — pick a slot to assign them, or remove them.</p>`));
+    app.appendChild(orphanBlock);
+  }
 
   app.appendChild(el(`<footer class="nav-back"><a href="#" id="backLink">&larr; All events</a></footer>`));
   app.querySelector('#backLink').addEventListener('click', (e) => { e.preventDefault(); renderRoomsList(); });
