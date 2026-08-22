@@ -19,12 +19,49 @@ const params = new URLSearchParams(location.search);
 const roomId = params.get('room');
 const app = document.getElementById('app');
 
-let state = { room: null, selectedSlot: null, name: '', mobile: '', myBookingId: null };
+let state = { room: null, selectedSlot: null };
 
 function el(html) {
   const t = document.createElement('template');
   t.innerHTML = html.trim();
   return t.content.firstChild;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function fmtLabel(t) {
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+// taken/capacity -> 'open' | 'warn' | 'full'. Filling-up kicks in at 60%.
+function fillStage(taken, capacity) {
+  if (taken >= capacity) return 'full';
+  if (capacity > 0 && taken / capacity >= 0.6) return 'warn';
+  return 'open';
+}
+
+function showModal(type, title, message) {
+  const overlay = el(`
+    <div class="modal-overlay">
+      <div class="modal-card modal-${type}">
+        <div class="modal-title">${escapeHtml(title)}</div>
+        <p>${escapeHtml(message)}</p>
+        <button type="button" class="modal-close">Got it</button>
+      </div>
+    </div>
+  `);
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('.modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  const onEsc = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); } };
+  document.addEventListener('keydown', onEsc);
+  overlay.querySelector('.modal-close').focus();
 }
 
 async function init() {
@@ -66,19 +103,9 @@ async function loadRoom() {
   render();
 }
 
-function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function fmtLabel(t) {
-  const [h, m] = t.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
-}
-
 function render() {
   const r = state.room;
+  document.querySelector('.sticky-bar')?.remove();
   app.innerHTML = '';
   app.appendChild(el(`
     <div>
@@ -111,14 +138,12 @@ function render() {
         <input id="mobileInput" type="tel" placeholder="e.g. 98765 43210" ${r.locked ? 'disabled' : ''}>
       </div>
       <p class="sub" style="font-size:0.82rem;margin-bottom:1rem;">Your mobile number lets you find and change your slot later from any device.</p>
-      <div id="banner"></div>
       <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:0.5rem;">
         <h2 style="margin:0;">Pick a time</h2>
         <button type="button" id="refreshBtn" class="ghost" style="padding:0.3rem 0.6rem; font-size:0.78rem;">Refresh</button>
       </div>
       <ul class="slot-list" id="slotList"></ul>
-      <div style="margin-top:1.25rem; display:flex; gap:0.6rem;">
-        <button id="confirmBtn" disabled>Confirm slot</button>
+      <div style="margin-top:1.25rem;">
         <button id="findBtn" class="ghost" type="button">I already booked &mdash; find my slot</button>
       </div>
     </div>
@@ -129,15 +154,16 @@ function render() {
 
   const slotList = form.querySelector('#slotList');
   r.slots.forEach(s => {
+    const stage = fillStage(s.taken, s.capacity);
     const row = el(`
       <li>
-        <button class="slot-row" data-slot="${s.slot_start}" ${(s.full || r.locked) ? 'disabled' : ''}>
+        <button class="slot-row stage-${stage}" data-slot="${s.slot_start}" ${(s.full || r.locked) ? 'disabled' : ''}>
           <span class="slot-time">${fmtLabel(s.slot_start)}</span>
           <span class="capacity-bar-wrap">
-            <span class="capacity-bar-track"><span class="capacity-bar-fill ${s.full ? 'full-fill' : ''}" style="width:${Math.min(100, (s.taken / s.capacity) * 100)}%"></span></span>
+            <span class="capacity-bar-track"><span class="capacity-bar-fill stage-${stage}" style="width:${Math.min(100, (s.taken / s.capacity) * 100)}%"></span></span>
             <span class="capacity-count">${s.taken}/${s.capacity}</span>
           </span>
-          <span class="slot-status ${s.full ? 'full' : ''}">${s.full ? 'Full' : (s.capacity - s.taken) + ' left'}</span>
+          <span class="slot-status stage-${stage}">${s.full ? 'Full' : (s.capacity - s.taken) + ' left'}</span>
         </button>
       </li>
     `);
@@ -145,7 +171,6 @@ function render() {
     slotList.appendChild(row);
   });
 
-  form.querySelector('#confirmBtn').addEventListener('click', () => confirmBooking(form));
   form.querySelector('#findBtn').addEventListener('click', () => findMyBooking(form));
   form.querySelector('#refreshBtn').addEventListener('click', () => loadRoom());
 }
@@ -156,50 +181,62 @@ function selectSlot(slot, form) {
     const s = row.dataset.slot;
     const info = state.room.slots.find(x => x.slot_start === s);
     const statusEl = row.querySelector('.slot-status');
+    const stage = info ? fillStage(info.taken, info.capacity) : 'open';
+    row.classList.remove('stage-open', 'stage-warn', 'stage-full', 'is-selected');
+    statusEl.classList.remove('stage-open', 'stage-warn', 'stage-full', 'selected');
     if (s === slot) {
-      row.style.background = '#EFE6CE';
+      row.classList.add('is-selected');
       statusEl.textContent = 'Selected';
       statusEl.classList.add('selected');
-      statusEl.classList.remove('full');
     } else {
-      row.style.background = 'none';
-      statusEl.classList.remove('selected');
-      if (info) {
-        statusEl.textContent = info.full ? 'Full' : (info.capacity - info.taken) + ' left';
-        statusEl.classList.toggle('full', info.full);
-      }
+      row.classList.add('stage-' + stage);
+      statusEl.classList.add('stage-' + stage);
+      if (info) statusEl.textContent = info.full ? 'Full' : (info.capacity - info.taken) + ' left';
     }
   });
-  form.querySelector('#confirmBtn').disabled = false;
+  showStickyBar(slot, form);
 }
 
-async function confirmBooking(form) {
+function showStickyBar(slot, form) {
+  document.querySelector('.sticky-bar')?.remove();
+  const bar = el(`
+    <div class="sticky-bar">
+      <div class="sticky-info">
+        <span class="sticky-label">Selected slot</span>
+        <span class="sticky-time">${fmtLabel(slot)}</span>
+      </div>
+      <button id="confirmBtn">Confirm slot</button>
+    </div>
+  `);
+  document.body.appendChild(bar);
+  bar.querySelector('#confirmBtn').addEventListener('click', () => confirmBooking(form, bar));
+}
+
+async function confirmBooking(form, bar) {
   const first = form.querySelector('#firstNameInput').value.trim();
   const last = form.querySelector('#surnameInput').value.trim();
   const mobile = form.querySelector('#mobileInput').value.trim();
   const name = [first, last].filter(Boolean).join(' ');
-  const banner = form.querySelector('#banner');
-  banner.innerHTML = '';
   if (!first || !last) {
-    banner.appendChild(el(`<div class="banner error">Please enter your first name and surname.</div>`));
+    showModal('error', 'Missing name', 'Please enter your first name and surname.');
     return;
   }
   if (!mobile) {
-    banner.appendChild(el(`<div class="banner error">Please enter your mobile number.</div>`));
+    showModal('error', 'Missing mobile number', 'Please enter your mobile number.');
     return;
   }
   if (!state.selectedSlot) return;
-  const btn = form.querySelector('#confirmBtn');
+  const btn = bar.querySelector('#confirmBtn');
   btn.disabled = true; btn.textContent = 'Booking…';
   const res = await api('bookSlot', { roomId, name, mobile, slot_start: state.selectedSlot });
   if (res.error) {
-    banner.appendChild(el(`<div class="banner error">${escapeHtml(res.error)}</div>`));
+    showModal('error', "Couldn't book that slot", res.error);
     btn.disabled = false; btn.textContent = 'Confirm slot';
     await loadRoom();
     return;
   }
-  banner.appendChild(el(`<div class="banner success">${res.updated ? 'Your slot has been updated to' : "You're booked for"} ${fmtLabel(state.selectedSlot)}. You can come back and change it anytime before the organiser locks bookings.</div>`));
-  btn.textContent = 'Confirm slot';
+  const verb = res.updated ? 'Your slot has been updated to' : "You're booked for";
+  showModal('success', res.updated ? 'Slot updated' : "You're booked", `${verb} ${fmtLabel(state.selectedSlot)}. You can come back and change it anytime before the organiser locks bookings.`);
   await loadRoom();
 }
 
@@ -208,18 +245,16 @@ async function findMyBooking(form) {
   const last = form.querySelector('#surnameInput').value.trim();
   const mobile = form.querySelector('#mobileInput').value.trim();
   const name = [first, last].filter(Boolean).join(' ');
-  const banner = form.querySelector('#banner');
-  banner.innerHTML = '';
   if (!name && !mobile) {
-    banner.appendChild(el(`<div class="banner error">Enter your name or mobile number first.</div>`));
+    showModal('error', 'Missing details', 'Enter your name or mobile number first.');
     return;
   }
   const res = await api('myBooking', { roomId, name, mobile });
   if (!res.found) {
-    banner.appendChild(el(`<div class="banner error">No booking found under that name or number.</div>`));
+    showModal('error', 'No booking found', 'No booking found under that name or number.');
     return;
   }
-  banner.appendChild(el(`<div class="banner success">You're booked for ${fmtLabel(res.slot_start)}. Pick a different slot below to move it.</div>`));
+  showModal('success', 'Booking found', `You're booked for ${fmtLabel(res.slot_start)}. Pick a different slot below to move it.`);
 }
 
 init();

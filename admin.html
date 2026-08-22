@@ -32,6 +32,11 @@ function fmtLabel(t) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
 }
+function fillStage(taken, capacity) {
+  if (taken >= capacity) return 'full';
+  if (capacity > 0 && taken / capacity >= 0.6) return 'warn';
+  return 'open';
+}
 
 async function init() {
   if (!password) return renderLogin();
@@ -179,9 +184,10 @@ async function renderRoom(roomId) {
   const allSlots = r.slots.map(s => s.slot_start);
   const slotWrap = el(`<div id="slotWrap"></div>`);
   r.slots.forEach(s => {
+    const stage = fillStage(s.bookings.length, s.capacity);
     const block = el(`
       <div class="admin-slot">
-        <div class="admin-slot-head">
+        <div class="admin-slot-head stage-${stage}">
           <span>${fmtLabel(s.slot_start)}</span>
           <span>${s.bookings.length} / ${s.capacity}</span>
         </div>
@@ -225,8 +231,8 @@ async function renderRoom(roomId) {
 
   if (r.orphaned && r.orphaned.length) {
     const orphanBlock = el(`
-      <div class="admin-slot" style="border-color:var(--full);">
-        <div class="admin-slot-head" style="background:#F4E3DF; color:var(--full);">
+      <div class="admin-slot" style="border-color:var(--coral-deep);">
+        <div class="admin-slot-head stage-full">
           <span>Unassigned bookings — needs review</span>
           <span>${r.orphaned.length}</span>
         </div>
