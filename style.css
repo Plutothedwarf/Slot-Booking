@@ -162,15 +162,17 @@ button:hover:not(:disabled) { filter: brightness(1.1); }
 }
 .capacity-bar-track {
   flex: 1;
-  height: 7px;
-  background: var(--rule);
+  height: 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
   border-radius: 100px;
   overflow: hidden;
 }
 .capacity-bar-fill {
   height: 100%;
   border-radius: 100px;
-  background: var(--teal-deep);
+  background: var(--teal);
+  min-width: 3px;
 }
 .capacity-bar-fill.stage-warn { background: var(--amber); }
 .capacity-bar-fill.stage-full { background: var(--coral); }

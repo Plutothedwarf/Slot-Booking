@@ -16,6 +16,7 @@
 let password = sessionStorage.getItem('admin_pw') || '';
 let view = 'rooms'; // 'rooms' | 'room'
 let currentRoomId = null;
+let roomPollTimer = null;
 const app = document.getElementById('app');
 
 function el(html) {
@@ -46,6 +47,7 @@ async function init() {
 }
 
 function renderLogin(error) {
+  clearInterval(roomPollTimer);
   app.innerHTML = '';
   app.appendChild(el(`
     <div>
@@ -72,6 +74,7 @@ function renderLogin(error) {
 }
 
 async function renderRoomsList() {
+  clearInterval(roomPollTimer);
   app.innerHTML = `<p class="eyebrow">Slot Signup — Admin</p><h1>Your events</h1><div id="rooms"></div><hr class="rule"><h2>Create a new event</h2><div id="createForm"></div>`;
   const rooms = await api('getRooms', {});
   const list = app.querySelector('#rooms');
@@ -134,6 +137,7 @@ async function renderRoomsList() {
 
 async function renderRoom(roomId) {
   currentRoomId = roomId;
+  clearInterval(roomPollTimer);
   app.innerHTML = `<p class="eyebrow">Loading&hellip;</p>`;
   const r = await api('adminGetRoom', { roomId, password });
   if (r.error) { app.innerHTML = `<div class="empty-state">${escapeHtml(r.error)}</div>`; return; }
@@ -276,6 +280,10 @@ async function renderRoom(roomId) {
 
   app.appendChild(el(`<footer class="nav-back"><a href="#" id="backLink">&larr; All events</a></footer>`));
   app.querySelector('#backLink').addEventListener('click', (e) => { e.preventDefault(); renderRoomsList(); });
+
+  roomPollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') renderRoom(roomId);
+  }, 8000);
 }
 
 init();

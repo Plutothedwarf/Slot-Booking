@@ -20,6 +20,7 @@ const roomId = params.get('room');
 const app = document.getElementById('app');
 
 let state = { room: null, selectedSlot: null };
+let pollTimer = null;
 
 function el(html) {
   const t = document.createElement('template');
@@ -70,6 +71,7 @@ async function init() {
 }
 
 async function renderRoomPicker() {
+  clearInterval(pollTimer);
   app.innerHTML = `<p class="eyebrow">Slot Signup</p><h1>Choose an event</h1><p class="sub">No event was specified in the link.</p><div id="rooms" class="rule"></div>`;
   const rooms = await api('getRooms', {});
   const list = document.getElementById('rooms');
@@ -173,6 +175,42 @@ function render() {
 
   form.querySelector('#findBtn').addEventListener('click', () => findMyBooking(form));
   form.querySelector('#refreshBtn').addEventListener('click', () => loadRoom());
+
+  clearInterval(pollTimer);
+  if (!r.locked) {
+    pollTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshSlotCounts(form);
+    }, 6000);
+  }
+}
+
+// Quietly re-fetches slot data and updates capacity bars/counts in place,
+// without rebuilding the form (so typed name/mobile and the current
+// selection survive) — this is what keeps everyone's screen live.
+async function refreshSlotCounts(form) {
+  const data = await api('getRoom', { roomId });
+  if (data.error) return;
+  state.room = data;
+  form.querySelectorAll('.slot-row').forEach(row => {
+    const s = row.dataset.slot;
+    const info = data.slots.find(x => x.slot_start === s);
+    if (!info) return;
+    const stage = fillStage(info.taken, info.capacity);
+    const isSelected = s === state.selectedSlot;
+    row.disabled = info.full && !isSelected;
+    const fillEl = row.querySelector('.capacity-bar-fill');
+    fillEl.style.width = Math.min(100, (info.taken / info.capacity) * 100) + '%';
+    fillEl.className = 'capacity-bar-fill stage-' + stage;
+    row.querySelector('.capacity-count').textContent = `${info.taken}/${info.capacity}`;
+    if (!isSelected) {
+      row.classList.remove('stage-open', 'stage-warn', 'stage-full');
+      row.classList.add('stage-' + stage);
+      const statusEl = row.querySelector('.slot-status');
+      statusEl.classList.remove('stage-open', 'stage-warn', 'stage-full');
+      statusEl.classList.add('stage-' + stage);
+      statusEl.textContent = info.full ? 'Full' : (info.capacity - info.taken) + ' left';
+    }
+  });
 }
 
 function selectSlot(slot, form) {
