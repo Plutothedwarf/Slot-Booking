@@ -161,6 +161,7 @@ button:hover:not(:disabled) { filter: brightness(1.1); }
   gap: 0.6rem;
 }
 .capacity-bar-track {
+  display: block;
   flex: 1;
   height: 9px;
   background: var(--panel-2);
@@ -169,10 +170,12 @@ button:hover:not(:disabled) { filter: brightness(1.1); }
   overflow: hidden;
 }
 .capacity-bar-fill {
+  display: block;
   height: 100%;
   border-radius: 100px;
   background: var(--teal);
   min-width: 3px;
+  transition: width 0.2s ease;
 }
 .capacity-bar-fill.stage-warn { background: var(--amber); }
 .capacity-bar-fill.stage-full { background: var(--coral); }
