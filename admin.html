@@ -48,6 +48,7 @@ async function init() {
 
 function renderLogin(error) {
   clearInterval(roomPollTimer);
+  currentRoomId = null;
   app.innerHTML = '';
   app.appendChild(el(`
     <div>
@@ -75,6 +76,7 @@ function renderLogin(error) {
 
 async function renderRoomsList() {
   clearInterval(roomPollTimer);
+  currentRoomId = null;
   app.innerHTML = `<p class="eyebrow">Slot Signup — Admin</p><h1>Your events</h1><div id="rooms"></div><hr class="rule"><h2>Create a new event</h2><div id="createForm"></div>`;
   const rooms = await api('getRooms', {});
   const list = app.querySelector('#rooms');
@@ -135,12 +137,29 @@ async function renderRoomsList() {
   app.querySelector('#createForm').appendChild(form);
 }
 
-async function renderRoom(roomId) {
+let lastRoomJson = '';
+
+// silent = true is used by the background poll: no "Loading" placeholder,
+// no redraw if nothing changed, and scroll position is kept.
+async function renderRoom(roomId, silent = false) {
   currentRoomId = roomId;
   clearInterval(roomPollTimer);
-  app.innerHTML = `<p class="eyebrow">Loading&hellip;</p>`;
+  if (!silent) {
+    lastRoomJson = '';
+    app.innerHTML = `<p class="eyebrow">Loading&hellip;</p>`;
+  }
   const r = await api('adminGetRoom', { roomId, password });
+  if (silent) {
+    const busy = document.activeElement && document.activeElement.tagName === 'SELECT' && app.contains(document.activeElement);
+    const stale = currentRoomId !== roomId;
+    if (r.error || busy || stale || JSON.stringify(r) === lastRoomJson) {
+      if (!stale) startRoomPoll(roomId);
+      return;
+    }
+  }
   if (r.error) { app.innerHTML = `<div class="empty-state">${escapeHtml(r.error)}</div>`; return; }
+  lastRoomJson = JSON.stringify(r);
+  const scrollY = window.scrollY;
 
   const shareUrl = location.origin + location.pathname.replace('admin.html', 'index.html') + '?room=' + roomId;
 
@@ -281,8 +300,14 @@ async function renderRoom(roomId) {
   app.appendChild(el(`<footer class="nav-back"><a href="#" id="backLink">&larr; All events</a></footer>`));
   app.querySelector('#backLink').addEventListener('click', (e) => { e.preventDefault(); renderRoomsList(); });
 
+  window.scrollTo(0, scrollY);
+  startRoomPoll(roomId);
+}
+
+function startRoomPoll(roomId) {
+  clearInterval(roomPollTimer);
   roomPollTimer = setInterval(() => {
-    if (document.visibilityState === 'visible') renderRoom(roomId);
+    if (document.visibilityState === 'visible') renderRoom(roomId, true);
   }, 8000);
 }
 
