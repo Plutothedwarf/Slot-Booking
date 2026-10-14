@@ -403,3 +403,42 @@ footer.nav-back a { font-size: 0.85rem; color: var(--ink-soft); }
 @media (max-width: 359px) {
   .field-row { flex-direction: column; gap: 0; }
 }
+
+.toolbar-btns { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+
+/* ---------------- Phone polish ---------------- */
+html, body { overflow-x: hidden; }
+.field, .field input, .field select { min-width: 0; }
+button:active:not(:disabled) { transform: scale(0.98); }
+.slot-row:active:not(:disabled) { background: rgba(69, 214, 192, 0.08); }
+
+@media (max-width: 560px) {
+  /* keep content clear of the notch / home bar */
+  .wrap {
+    padding: calc(1.25rem + env(safe-area-inset-top, 0px))
+             calc(1rem + env(safe-area-inset-right, 0px))
+             calc(7.5rem + env(safe-area-inset-bottom, 0px))
+             calc(1rem + env(safe-area-inset-left, 0px));
+  }
+
+  /* 16px inputs stop iOS from zooming the page when a field is tapped */
+  .field input, .field select, .admin-booking-row select { font-size: 16px; }
+
+  .sticky-bar { gap: 0.75rem; }
+  .sticky-bar .sticky-info { min-width: 0; }
+
+  /* Admin: event cards */
+  .room-card .actions { width: 100%; justify-content: space-between; }
+  .room-card .actions button { min-height: 44px; padding: 0.5rem 1rem; }
+
+  /* Admin: toolbar buttons in a tidy 2-column grid */
+  .toolbar-btns { display: grid; grid-template-columns: 1fr 1fr; }
+  .toolbar-btns button { width: 100%; }
+
+  /* Admin: booking rows stack, with full-width move dropdown and a real tap target */
+  .admin-slot-head { padding: 0.75rem 0.9rem; }
+  .admin-booking-row { flex-direction: column; align-items: stretch; padding: 0.75rem 0.9rem; gap: 0.6rem; }
+  .admin-booking-row .actions { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; width: 100%; }
+  .admin-booking-row select { width: 100%; min-height: 44px; padding: 0.4rem 0.5rem; }
+  .admin-booking-row .actions button { min-height: 44px; padding: 0.4rem 1rem; font-size: 0.85rem; }
+}

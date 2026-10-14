@@ -177,7 +177,8 @@ async function renderRoom(roomId, silent = false) {
   const toolbar = el(`
     <div class="panel" style="margin:1.25rem 0;">
       <div class="field"><label>Share this link with participants</label><input readonly value="${escapeHtml(shareUrl)}" onclick="this.select()"></div>
-      <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+      <div class="toolbar-btns">
+        <button id="copyBtn" class="secondary">Copy link</button>
         <button id="lockBtn" class="secondary">${r.locked ? 'Unlock bookings' : 'Lock bookings'}</button>
         <button id="exportBtn" class="secondary">Export Excel</button>
         <button id="refreshBtn" class="secondary">Refresh</button>
@@ -185,6 +186,12 @@ async function renderRoom(roomId, silent = false) {
       </div>
     </div>
   `);
+  toolbar.querySelector('#copyBtn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    try { await navigator.clipboard.writeText(shareUrl); btn.textContent = 'Copied'; }
+    catch (err) { toolbar.querySelector('input').select(); btn.textContent = 'Select & copy'; }
+    setTimeout(() => { btn.textContent = 'Copy link'; }, 1500);
+  });
   toolbar.querySelector('#refreshBtn').addEventListener('click', () => renderRoom(roomId));
   toolbar.querySelector('#lockBtn').addEventListener('click', async () => {
     await api('adminToggleLock', { roomId, password, locked: !r.locked });
@@ -327,193 +334,26 @@ function slotRangeLabel(start, interval) {
   return fmtLabel(start) + ' - ' + fmtLabel(addMinutesToHHMM(start, interval));
 }
 
-function slotStatus(n, cap) {
-  if (n === 0) return 'Empty';
-  if (n >= cap) return 'Full';
-  if (cap > 0 && n / cap >= 0.6) return 'Filling up';
-  return 'Open';
-}
-
-const STATUS_FILL = { 'Empty': 'FFEEF2F5', 'Open': 'FFD5F3EE', 'Filling up': 'FFFCEBC4', 'Full': 'FFFAD1D0' };
-
+// One sheet, one row per booking, sorted by time slot.
 function buildWorkbook(ExcelJS, r) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'Slot Signup';
-  wb.created = new Date();
-
-  const INK = 'FF1B2733';
-  const HEAD_FILL = 'FF16212C';
-  const RULE = { style: 'thin', color: { argb: 'FFD3DAE1' } };
-  const interval = r.interval_minutes;
-
-  const totalBooked = r.slots.reduce((n, s) => n + s.bookings.length, 0);
-  const totalCap = r.slots.reduce((n, s) => n + s.capacity, 0);
-  const orphaned = r.orphaned || [];
-
-  function styleHeader(row) {
-    row.height = 24;
-    row.eachCell(cell => {
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEAD_FILL } };
-      cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-    });
-  }
-
-  /* ---- Sheet 1: Roster, grouped by time slot ---- */
-  const ws = wb.addWorksheet('Roster', {
-    views: [{ state: 'frozen', ySplit: 5, showGridLines: false }],
-    pageSetup: { fitToPage: true, fitToWidth: 1, fitToHeight: 0, orientation: 'portrait', paperSize: 9 }
-  });
+  const ws = wb.addWorksheet('Bookings');
   ws.columns = [
-    { key: 'slot', width: 26 },
-    { key: 'no', width: 8 },
-    { key: 'name', width: 38 },
-    { key: 'mobile', width: 22 }
+    { header: 'Time Slot', key: 'slot', width: 24 },
+    { header: 'Name', key: 'name', width: 30 },
+    { header: 'Mobile', key: 'mobile', width: 16 }
   ];
-
-  ws.mergeCells('A1:D1');
-  ws.getCell('A1').value = r.room_name;
-  ws.getCell('A1').font = { bold: true, size: 18, color: { argb: INK } };
-  ws.getRow(1).height = 30;
-  ws.getCell('A1').alignment = { vertical: 'middle' };
-
-  ws.mergeCells('A2:D2');
-  ws.getCell('A2').value = r.date || '';
-  ws.getCell('A2').font = { size: 12, color: { argb: 'FF5E7286' } };
-
-  ws.mergeCells('A3:D3');
-  ws.getCell('A3').value = totalBooked + ' booked of ' + totalCap + ' spots across ' + r.slots.length + ' time slots';
-  ws.getCell('A3').font = { size: 11, bold: true, color: { argb: INK } };
-
-  ws.getRow(4).height = 8;
-
-  const head = ws.getRow(5);
-  head.values = ['Time Slot', 'No.', 'Name', 'Mobile'];
-  styleHeader(head);
-  head.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' };
-
-  r.slots.forEach(s => {
-    const n = s.bookings.length;
-    const status = slotStatus(n, s.capacity);
-    const bandRow = ws.addRow([
-      slotRangeLabel(s.slot_start, interval) + '     |     ' + n + ' of ' + s.capacity + ' booked     |     ' + status
-    ]);
-    ws.mergeCells('A' + bandRow.number + ':D' + bandRow.number);
-    bandRow.height = 22;
-    const band = ws.getCell('A' + bandRow.number);
-    band.font = { bold: true, size: 11, color: { argb: INK } };
-    band.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STATUS_FILL[status] } };
-    band.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-
-    if (n === 0) {
-      const row = ws.addRow(['', '', 'No bookings yet', '']);
-      row.getCell(3).font = { italic: true, color: { argb: 'FF8FA4B8' } };
-    } else {
-      s.bookings.forEach((b, i) => {
-        const row = ws.addRow(['', i + 1, b.name || '', '']);
-        const mob = row.getCell(4);
-        mob.value = String(b.mobile == null ? '' : b.mobile);
-        mob.numFmt = '@';
-        row.getCell(2).alignment = { horizontal: 'center' };
-        row.eachCell({ includeEmpty: true }, cell => {
-          cell.border = { bottom: RULE };
-          if (!cell.font || !cell.font.italic) cell.font = { size: 11, color: { argb: INK } };
-          if (cell.col !== 2) cell.alignment = Object.assign({ vertical: 'middle', indent: 1 }, cell.alignment || {});
-        });
-      });
-    }
-    ws.addRow([]).height = 8;
-  });
-
-  if (orphaned.length) {
-    const bandRow = ws.addRow(['UNASSIGNED BOOKINGS (needs review)     |     ' + orphaned.length]);
-    ws.mergeCells('A' + bandRow.number + ':D' + bandRow.number);
-    const band = ws.getCell('A' + bandRow.number);
-    band.font = { bold: true, size: 11, color: { argb: INK } };
-    band.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STATUS_FILL['Full'] } };
-    band.alignment = { vertical: 'middle', indent: 1 };
-    bandRow.height = 22;
-    orphaned.forEach((b, i) => {
-      const row = ws.addRow(['', i + 1, b.name || '', String(b.mobile == null ? '' : b.mobile)]);
-      row.getCell(4).numFmt = '@';
-      row.getCell(2).alignment = { horizontal: 'center' };
-    });
-  }
-
-  /* ---- Sheet 2: Summary, one row per slot ---- */
-  const sm = wb.addWorksheet('Summary', {
-    views: [{ state: 'frozen', ySplit: 1, showGridLines: false }],
-    pageSetup: { fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
-  });
-  sm.columns = [
-    { header: 'Time Slot', key: 'slot', width: 28 },
-    { header: 'Booked', key: 'booked', width: 12 },
-    { header: 'Capacity', key: 'cap', width: 12 },
-    { header: 'Spots Left', key: 'left', width: 14 },
-    { header: 'Status', key: 'status', width: 16 }
-  ];
-  styleHeader(sm.getRow(1));
-  [2, 3, 4, 5].forEach(c => { sm.getRow(1).getCell(c).alignment = { vertical: 'middle', horizontal: 'center' }; });
-  r.slots.forEach(s => {
-    const n = s.bookings.length;
-    const status = slotStatus(n, s.capacity);
-    const row = sm.addRow({
-      slot: slotRangeLabel(s.slot_start, interval),
-      booked: n,
-      cap: s.capacity,
-      left: Math.max(0, s.capacity - n),
-      status: status
-    });
-    row.height = 20;
-    row.eachCell(cell => {
-      cell.border = { bottom: RULE };
-      cell.font = { size: 11, color: { argb: INK } };
-      cell.alignment = { vertical: 'middle', horizontal: cell.col === 1 ? 'left' : 'center', indent: cell.col === 1 ? 1 : 0 };
-    });
-    const sc = row.getCell(5);
-    sc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STATUS_FILL[status] } };
-    sc.font = { size: 11, bold: true, color: { argb: INK } };
-  });
-  const totalRow = sm.addRow({ slot: 'Total', booked: totalBooked, cap: totalCap, left: Math.max(0, totalCap - totalBooked), status: '' });
-  totalRow.height = 22;
-  totalRow.eachCell({ includeEmpty: true }, cell => {
-    cell.font = { bold: true, size: 11, color: { argb: INK } };
-    cell.border = { top: { style: 'medium', color: { argb: INK } } };
-    cell.alignment = { vertical: 'middle', horizontal: cell.col === 1 ? 'left' : 'center', indent: cell.col === 1 ? 1 : 0 };
-  });
-
-  /* ---- Sheet 3: All Bookings, flat list for sorting and filtering ---- */
-  const fl = wb.addWorksheet('All Bookings', {
-    views: [{ state: 'frozen', ySplit: 1 }],
-    pageSetup: { fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
-  });
-  fl.columns = [
-    { header: 'Time Slot', key: 'slot', width: 28 },
-    { header: 'Name', key: 'name', width: 38 },
-    { header: 'Mobile', key: 'mobile', width: 22 }
-  ];
-  styleHeader(fl.getRow(1));
+  ws.getRow(1).font = { bold: true };
   r.slots.forEach(s => {
     s.bookings.forEach(b => {
-      const row = fl.addRow({ slot: slotRangeLabel(s.slot_start, interval), name: b.name || '', mobile: String(b.mobile == null ? '' : b.mobile) });
+      const row = ws.addRow({
+        slot: slotRangeLabel(s.slot_start, r.interval_minutes),
+        name: b.name || '',
+        mobile: String(b.mobile == null ? '' : b.mobile)
+      });
       row.getCell(3).numFmt = '@';
     });
   });
-  orphaned.forEach(b => {
-    const row = fl.addRow({ slot: 'Unassigned', name: b.name || '', mobile: String(b.mobile == null ? '' : b.mobile) });
-    row.getCell(3).numFmt = '@';
-  });
-  fl.eachRow((row, i) => {
-    if (i === 1) return;
-    row.height = 20;
-    row.eachCell(cell => {
-      cell.border = { bottom: RULE };
-      cell.font = { size: 11, color: { argb: INK } };
-      cell.alignment = { vertical: 'middle', indent: 1 };
-    });
-  });
-  if (fl.rowCount > 1) fl.autoFilter = { from: 'A1', to: 'C' + fl.rowCount };
-
   return wb;
 }
 

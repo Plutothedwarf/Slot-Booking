@@ -149,7 +149,13 @@ function readRows(sheetName, headers) {
   const values = sh.getRange(2, 1, lastRow - 1, headers.length).getValues();
   return values.map((row, i) => {
     const obj = {};
-    headers.forEach((h, idx) => obj[h] = row[idx]);
+    headers.forEach((h, idx) => {
+      let v = row[idx];
+      // Sheets may turn "12:30" into a time value; turn it back into text.
+      if (h === 'slot_start' && v instanceof Date) v = fmtTime(v.getHours(), v.getMinutes());
+      if (h === 'mobile' && v !== '' && v !== null) v = String(v);
+      obj[h] = v;
+    });
     obj._row = i + 2; // actual sheet row number
     return obj;
   }).filter(r => r[headers[0]] !== '' && r[headers[0]] !== null);
@@ -158,13 +164,17 @@ function readRows(sheetName, headers) {
 function appendRow(sheetName, headers, obj) {
   const sh = sheet(sheetName);
   const row = headers.map(h => obj[h] !== undefined ? obj[h] : '');
-  sh.appendRow(row);
+  const rng = sh.getRange(sh.getLastRow() + 1, 1, 1, row.length);
+  if (sheetName === BOOKINGS_SHEET) rng.setNumberFormat('@'); // keep times/mobiles as plain text
+  rng.setValues([row]);
 }
 
 function updateRow(sheetName, headers, rowNumber, obj) {
   const sh = sheet(sheetName);
   const row = headers.map(h => obj[h] !== undefined ? obj[h] : '');
-  sh.getRange(rowNumber, 1, 1, headers.length).setValues([row]);
+  const rng = sh.getRange(rowNumber, 1, 1, headers.length);
+  if (sheetName === BOOKINGS_SHEET) rng.setNumberFormat('@');
+  rng.setValues([row]);
 }
 
 function deleteRow(sheetName, rowNumber) {
