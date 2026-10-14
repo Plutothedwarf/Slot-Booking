@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0E141B">
 <title>Slot Signup</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -21,6 +22,7 @@ const app = document.getElementById('app');
 
 let state = { room: null, selectedSlot: null };
 let pollTimer = null;
+let currentForm = null;
 
 function el(html) {
   const t = document.createElement('template');
@@ -46,10 +48,10 @@ function fillStage(taken, capacity) {
   return 'open';
 }
 
-function showModal(type, title, message) {
+function showModal(type, title, message, onClose) {
   const overlay = el(`
     <div class="modal-overlay">
-      <div class="modal-card modal-${type}">
+      <div class="modal-card modal-${type}" role="dialog" aria-modal="true">
         <div class="modal-title">${escapeHtml(title)}</div>
         <p>${escapeHtml(message)}</p>
         <button type="button" class="modal-close">Got it</button>
@@ -57,13 +59,27 @@ function showModal(type, title, message) {
     </div>
   `);
   document.body.appendChild(overlay);
-  const close = () => overlay.remove();
+  let closed = false;
+  const onEsc = (e) => { if (e.key === 'Escape') close(); };
+  function close() {
+    if (closed) return;
+    closed = true;
+    overlay.remove();
+    document.removeEventListener('keydown', onEsc);
+    if (onClose) onClose();
+  }
   overlay.querySelector('.modal-close').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-  const onEsc = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); } };
   document.addEventListener('keydown', onEsc);
   overlay.querySelector('.modal-close').focus();
 }
+
+// Phones pause timers in the background. Refresh the moment the tab is back.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && currentForm && state.room && !state.room.locked) {
+    refreshSlotCounts(currentForm);
+  }
+});
 
 async function init() {
   if (!roomId) return renderRoomPicker();
@@ -128,25 +144,25 @@ function render() {
       <div class="field-row">
         <div class="field">
           <label for="firstNameInput">First name</label>
-          <input id="firstNameInput" type="text" placeholder="First name" ${r.locked ? 'disabled' : ''}>
+          <input id="firstNameInput" type="text" placeholder="First name" autocomplete="given-name" autocapitalize="words" enterkeyhint="next" ${r.locked ? 'disabled' : ''}>
         </div>
         <div class="field">
           <label for="surnameInput">Surname</label>
-          <input id="surnameInput" type="text" placeholder="Surname" ${r.locked ? 'disabled' : ''}>
+          <input id="surnameInput" type="text" placeholder="Surname" autocomplete="family-name" autocapitalize="words" enterkeyhint="next" ${r.locked ? 'disabled' : ''}>
         </div>
       </div>
       <div class="field">
         <label for="mobileInput">Mobile number</label>
-        <input id="mobileInput" type="tel" placeholder="e.g. 98765 43210" ${r.locked ? 'disabled' : ''}>
+        <input id="mobileInput" type="tel" inputmode="tel" placeholder="e.g. 98765 43210" autocomplete="tel" enterkeyhint="done" ${r.locked ? 'disabled' : ''}>
       </div>
       <p class="sub" style="font-size:0.82rem;margin-bottom:1rem;">Your mobile number lets you find and change your slot later from any device.</p>
       <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:0.5rem;">
         <h2 style="margin:0;">Pick a time</h2>
-        <button type="button" id="refreshBtn" class="ghost" style="padding:0.3rem 0.6rem; font-size:0.78rem;">Refresh</button>
+        <button type="button" id="refreshBtn" class="ghost btn-sm">Refresh</button>
       </div>
       <ul class="slot-list" id="slotList"></ul>
       <div style="margin-top:1.25rem;">
-        <button id="findBtn" class="ghost" type="button">I already booked &mdash; find my slot</button>
+        <button id="findBtn" class="ghost" type="button">I already booked, find my slot</button>
       </div>
     </div>
   `);
@@ -160,12 +176,14 @@ function render() {
     const row = el(`
       <li>
         <button class="slot-row stage-${stage}" data-slot="${s.slot_start}" ${(s.full || r.locked) ? 'disabled' : ''}>
-          <span class="slot-time">${fmtLabel(s.slot_start)}</span>
-          <span class="capacity-bar-wrap">
-            <span class="capacity-bar-track"><span class="capacity-bar-fill stage-${stage}" style="width:${Math.min(100, (s.taken / s.capacity) * 100)}%"></span></span>
-            <span class="capacity-count">${s.taken}/${s.capacity}</span>
+          <span class="slot-inner">
+            <span class="slot-time">${fmtLabel(s.slot_start)}</span>
+            <span class="capacity-bar-wrap">
+              <span class="capacity-bar-track"><span class="capacity-bar-fill stage-${stage}" style="width:${Math.min(100, (s.taken / s.capacity) * 100)}%"></span></span>
+              <span class="capacity-count">${s.taken}/${s.capacity}</span>
+            </span>
+            <span class="slot-status stage-${stage}">${s.full ? 'Full' : (s.capacity - s.taken) + ' left'}</span>
           </span>
-          <span class="slot-status stage-${stage}">${s.full ? 'Full' : (s.capacity - s.taken) + ' left'}</span>
         </button>
       </li>
     `);
@@ -176,6 +194,7 @@ function render() {
   form.querySelector('#findBtn').addEventListener('click', () => findMyBooking(form));
   form.querySelector('#refreshBtn').addEventListener('click', () => loadRoom());
 
+  currentForm = form;
   clearInterval(pollTimer);
   if (!r.locked) {
     pollTimer = setInterval(() => {
@@ -186,7 +205,7 @@ function render() {
 
 // Quietly re-fetches slot data and updates capacity bars/counts in place,
 // without rebuilding the form (so typed name/mobile and the current
-// selection survive) — this is what keeps everyone's screen live.
+// selection survive). This is what keeps everyone's screen live.
 async function refreshSlotCounts(form) {
   const data = await api('getRoom', { roomId });
   if (data.error) return;
@@ -255,12 +274,16 @@ async function confirmBooking(form, bar) {
   const last = form.querySelector('#surnameInput').value.trim();
   const mobile = form.querySelector('#mobileInput').value.trim();
   const name = [first, last].filter(Boolean).join(' ');
+  const focusField = (id) => () => {
+    const f = form.querySelector(id);
+    if (f) { f.scrollIntoView({ behavior: 'smooth', block: 'center' }); f.focus({ preventScroll: true }); }
+  };
   if (!first || !last) {
-    showModal('error', 'Missing name', 'Please enter your first name and surname.');
+    showModal('error', 'Missing name', 'Please enter your first name and surname.', focusField(first ? '#surnameInput' : '#firstNameInput'));
     return;
   }
   if (!mobile) {
-    showModal('error', 'Missing mobile number', 'Please enter your mobile number.');
+    showModal('error', 'Missing mobile number', 'Please enter your mobile number.', focusField('#mobileInput'));
     return;
   }
   if (!state.selectedSlot) return;

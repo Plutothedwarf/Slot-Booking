@@ -14,7 +14,10 @@
   --coral: #FF6B6A;
   --coral-deep: #C2453F;
   --focus: #6EC8FF;
+  color-scheme: dark;
 }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 * { box-sizing: border-box; }
 
@@ -24,6 +27,7 @@
 
 body {
   margin: 0;
+  -webkit-tap-highlight-color: transparent;
   background: var(--bg);
   color: var(--ink);
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
@@ -33,7 +37,7 @@ body {
 .wrap {
   max-width: 720px;
   margin: 0 auto;
-  padding: 2.5rem 1.25rem 6rem;
+  padding: 2.5rem 1.25rem calc(7rem + env(safe-area-inset-bottom, 0px));
 }
 
 h1, h2, h3 {
@@ -44,7 +48,7 @@ h1, h2, h3 {
   color: var(--ink);
 }
 
-h1 { font-size: 2.1rem; }
+h1 { font-size: 2.1rem; overflow-wrap: anywhere; line-height: 1.15; }
 h2 { font-size: 1.3rem; }
 
 .eyebrow {
@@ -86,8 +90,11 @@ h2 { font-size: 1.3rem; }
   border-radius: 4px;
   background: var(--panel-2);
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: 1rem;
+  min-height: 46px;
   color: var(--ink);
+  -webkit-appearance: none;
+  appearance: none;
 }
 .field input::placeholder { color: var(--ink-faint); }
 .field input:focus, .field select:focus, button:focus-visible, .slot-row:focus-visible {
@@ -107,7 +114,10 @@ button {
   background: var(--teal);
   color: #0A1A18;
   cursor: pointer;
+  min-height: 44px;
+  touch-action: manipulation;
 }
+button.btn-sm { min-height: 36px; padding: 0.4rem 0.8rem; font-size: 0.8rem; }
 button.secondary {
   background: transparent;
   color: var(--ink);
@@ -125,9 +135,7 @@ button:hover:not(:disabled) { filter: brightness(1.1); }
 .slot-list { list-style: none; margin: 0; padding: 0; }
 
 .slot-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+  display: block;
   padding: 0.85rem 0.9rem 0.85rem 0.75rem;
   border-bottom: 1px solid var(--rule);
   border-left: 3px solid var(--rule);
@@ -145,6 +153,13 @@ button:hover:not(:disabled) { filter: brightness(1.1); }
 .slot-row.stage-warn { border-left-color: var(--amber-deep); }
 .slot-row.stage-full { border-left-color: var(--coral-deep); }
 .slot-row.is-selected { background: rgba(69, 214, 192, 0.1); border-left-color: var(--teal); }
+
+.slot-inner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
 
 .slot-time {
   font-family: 'IBM Plex Mono', monospace;
@@ -247,7 +262,7 @@ button:hover:not(:disabled) { filter: brightness(1.1); }
   left: 0; right: 0; bottom: 0;
   background: var(--panel);
   border-top: 1px solid var(--rule);
-  padding: 0.9rem 1.25rem;
+  padding: 0.9rem calc(1.25rem + env(safe-area-inset-right, 0px)) calc(0.9rem + env(safe-area-inset-bottom, 0px)) calc(1.25rem + env(safe-area-inset-left, 0px));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -302,8 +317,8 @@ button:hover:not(:disabled) { filter: brightness(1.1); }
 .admin-booking-row .name { font-weight: 600; color: var(--ink); }
 .admin-booking-row .mobile { color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; }
 .admin-booking-row .actions { display: flex; gap: 0.4rem; }
-.admin-booking-row .actions button { padding: 0.3rem 0.55rem; font-size: 0.75rem; }
-.admin-booking-row select { padding: 0.3rem; font-size: 0.78rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel-2); color: var(--ink); }
+.admin-booking-row .actions button { padding: 0.3rem 0.55rem; font-size: 0.75rem; min-height: 36px; }
+.admin-booking-row select { padding: 0.3rem; font-size: 0.85rem; min-height: 36px; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel-2); color: var(--ink); }
 
 .room-card {
   border: 1px solid var(--rule);
@@ -344,3 +359,47 @@ a { color: var(--teal); }
 
 footer.nav-back { margin-top: 2rem; }
 footer.nav-back a { font-size: 0.85rem; color: var(--ink-soft); }
+
+/* ---------------- Phone layout ---------------- */
+@media (max-width: 560px) {
+  .wrap { padding: 1.5rem 1rem calc(7.5rem + env(safe-area-inset-bottom, 0px)); }
+  h1 { font-size: 1.7rem; }
+  h2 { font-size: 1.2rem; }
+  .panel { padding: 1rem; }
+  .field-row { gap: 0.6rem; }
+
+  /* Two-line slot rows: time and status on top, full-width capacity bar below */
+  .slot-row { padding: 0.8rem 0.75rem; min-height: 64px; }
+  .slot-inner {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "time status" "bar bar";
+    align-items: center;
+    column-gap: 0.75rem;
+    row-gap: 0.6rem;
+  }
+  .slot-time { grid-area: time; font-size: 1.05rem; min-width: 0; }
+  .slot-status { grid-area: status; min-width: 0; font-size: 0.85rem; }
+  .capacity-bar-wrap { grid-area: bar; }
+  .capacity-bar-track { height: 10px; }
+  .capacity-count { font-size: 0.8rem; }
+
+  #findBtn { width: 100%; }
+
+  .sticky-bar .sticky-time { font-size: 1.25rem; }
+  .sticky-bar button { min-height: 48px; padding: 0.7rem 1.4rem; font-size: 1rem; }
+
+  .modal-overlay { padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px)); align-items: flex-end; }
+  .modal-card { max-width: none; padding: 1.4rem 1.25rem; }
+  .modal-card p { font-size: 1rem; }
+  .modal-card button { min-height: 48px; font-size: 1rem; }
+
+  /* Admin */
+  .room-card { flex-wrap: wrap; gap: 0.75rem; }
+  .admin-booking-row { flex-wrap: wrap; }
+  .admin-booking-row .actions { width: 100%; justify-content: flex-end; }
+}
+
+@media (max-width: 359px) {
+  .field-row { flex-direction: column; gap: 0; }
+}
