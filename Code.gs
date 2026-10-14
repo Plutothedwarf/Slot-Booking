@@ -23,7 +23,7 @@ const BOOKINGS_HEADERS = ['booking_id', 'room_id', 'slot_start', 'name', 'mobile
  * it won't create a second spreadsheet if one already exists.
  */
 function setup() {
-  const ADMIN_PASSWORD = 'CHANGE_ME';
+  const ADMIN_PASSWORD = 'atha123';
 
   const props = PropertiesService.getScriptProperties();
   let sheetId = props.getProperty('SHEET_ID');
