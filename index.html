@@ -155,7 +155,7 @@ function render() {
         <label for="mobileInput">Mobile number</label>
         <input id="mobileInput" type="tel" inputmode="tel" placeholder="e.g. 98765 43210" autocomplete="tel" enterkeyhint="done" ${r.locked ? 'disabled' : ''}>
       </div>
-      <p class="sub" style="font-size:0.82rem;margin-bottom:1rem;">Your mobile number lets you find and change your slot later from any device.</p>
+      <p class="sub" style="font-size:0.82rem;margin-bottom:1rem;">Use a 10-digit mobile number. The same number lets you find and change your slot later from any device.</p>
       <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:0.5rem;">
         <h2 style="margin:0;">Pick a time</h2>
         <button type="button" id="refreshBtn" class="ghost btn-sm">Refresh</button>
@@ -199,7 +199,7 @@ function render() {
   if (!r.locked) {
     pollTimer = setInterval(() => {
       if (document.visibilityState === 'visible') refreshSlotCounts(form);
-    }, 6000);
+    }, 15000);
   }
 }
 
@@ -282,14 +282,15 @@ async function confirmBooking(form, bar) {
     showModal('error', 'Missing name', 'Please enter your first name and surname.', focusField(first ? '#surnameInput' : '#firstNameInput'));
     return;
   }
-  if (!mobile) {
-    showModal('error', 'Missing mobile number', 'Please enter your mobile number.', focusField('#mobileInput'));
+  const cleaned = cleanMobile(mobile);
+  if (cleaned.length !== 10) {
+    showModal('error', 'Check your mobile number', 'Please enter a valid 10-digit mobile number.', focusField('#mobileInput'));
     return;
   }
   if (!state.selectedSlot) return;
   const btn = bar.querySelector('#confirmBtn');
   btn.disabled = true; btn.textContent = 'Booking…';
-  const res = await api('bookSlot', { roomId, name, mobile, slot_start: state.selectedSlot });
+  const res = await api('bookSlot', { roomId, name, mobile: cleaned, slot_start: state.selectedSlot });
   if (res.error) {
     showModal('error', "Couldn't book that slot", res.error);
     btn.disabled = false; btn.textContent = 'Confirm slot';
@@ -302,17 +303,14 @@ async function confirmBooking(form, bar) {
 }
 
 async function findMyBooking(form) {
-  const first = form.querySelector('#firstNameInput').value.trim();
-  const last = form.querySelector('#surnameInput').value.trim();
-  const mobile = form.querySelector('#mobileInput').value.trim();
-  const name = [first, last].filter(Boolean).join(' ');
-  if (!name && !mobile) {
-    showModal('error', 'Missing details', 'Enter your name or mobile number first.');
+  const cleaned = cleanMobile(form.querySelector('#mobileInput').value);
+  if (cleaned.length !== 10) {
+    showModal('error', 'Enter your mobile number', 'Type the 10-digit mobile number you booked with, then try again.');
     return;
   }
-  const res = await api('myBooking', { roomId, name, mobile });
+  const res = await api('myBooking', { roomId, mobile: cleaned });
   if (!res.found) {
-    showModal('error', 'No booking found', 'No booking found under that name or number.');
+    showModal('error', 'No booking found', 'No booking found under that number.');
     return;
   }
   showModal('success', 'Booking found', `You're booked for ${fmtLabel(res.slot_start)}. Pick a different slot below to move it.`);

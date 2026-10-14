@@ -16,15 +16,15 @@ const ROOMS_HEADERS = ['room_id', 'room_name', 'date', 'start_time', 'end_time',
 const BOOKINGS_HEADERS = ['booking_id', 'room_id', 'slot_start', 'name', 'mobile', 'created_at', 'updated_at'];
 
 /**
- * RUN THIS ONCE from the Apps Script editor (function dropdown → setup →
- * Run). Change ADMIN_PASSWORD below first. Creates a new spreadsheet named
- * "Slot Signup Data" with both tabs and headers already set up, and stores
- * your admin password. Safe to re-run later just to change the password —
- * it won't create a second spreadsheet if one already exists.
+ * RUN THIS ONCE from the Apps Script editor (function dropdown -> setup -> Run).
+ * Creates a spreadsheet named "Slot Signup Data" with both tabs and headers.
+ * Safe to re-run: it will not create a second spreadsheet.
+ *
+ * ADMIN PASSWORD is NOT stored in this file. Set it in
+ *   Project Settings -> Script Properties -> Add property
+ *   name: ADMIN_PASSWORD   value: (your password)
  */
 function setup() {
-  const ADMIN_PASSWORD = 'atha123';
-
   const props = PropertiesService.getScriptProperties();
   let sheetId = props.getProperty('SHEET_ID');
   let ss;
@@ -40,21 +40,22 @@ function setup() {
     const sh = ss.insertSheet(ROOMS_SHEET);
     sh.getRange(1, 1, 1, ROOMS_HEADERS.length).setValues([ROOMS_HEADERS]).setFontWeight('bold');
   }
-  // Force start_time/end_time columns to plain text so Sheets never
-  // silently converts "12:00" into a time value on us.
-  ss.getSheetByName(ROOMS_SHEET).getRange('D2:E').setNumberFormat('@');
   if (!ss.getSheetByName(BOOKINGS_SHEET)) {
     const sh = ss.insertSheet(BOOKINGS_SHEET);
     sh.getRange(1, 1, 1, BOOKINGS_HEADERS.length).setValues([BOOKINGS_HEADERS]).setFontWeight('bold');
   }
-  // Remove the default "Sheet1" tab if it's still there and empty
+  // Keep date / time / mobile columns as plain text so Sheets never converts them.
+  ss.getSheetByName(ROOMS_SHEET).getRange('C2:E').setNumberFormat('@');
+  ss.getSheetByName(BOOKINGS_SHEET).getRange('C2:C').setNumberFormat('@');
+  ss.getSheetByName(BOOKINGS_SHEET).getRange('E2:E').setNumberFormat('@');
+
   const def = ss.getSheetByName('Sheet1');
   if (def && ss.getSheets().length > 1) ss.deleteSheet(def);
 
-  props.setProperty('ADMIN_PASSWORD', ADMIN_PASSWORD);
-
+  if (!props.getProperty('ADMIN_PASSWORD')) {
+    Logger.log('WARNING: ADMIN_PASSWORD is not set. Add it under Project Settings -> Script Properties.');
+  }
   Logger.log('Done. Spreadsheet URL: ' + ss.getUrl());
-  Logger.log('Now deploy this project as a Web App (see SETUP.md step 3).');
 }
 
 function getSS() {
@@ -77,10 +78,10 @@ function doGet(e) {
         result = getRoomPublic(payload.roomId);
         break;
       case 'bookSlot':
-        result = bookSlot(payload);
+        result = withLock(() => bookSlot(payload));
         break;
       case 'cancelBooking':
-        result = cancelBooking(payload);
+        result = withLock(() => cancelBooking(payload));
         break;
       case 'myBooking':
         result = myBooking(payload);
@@ -94,31 +95,27 @@ function doGet(e) {
         break;
       case 'adminCreateRoom':
         requireAdmin(payload);
-        result = adminCreateRoom(payload);
+        result = withLock(() => adminCreateRoom(payload));
         break;
       case 'adminUpdateRoom':
         requireAdmin(payload);
-        result = adminUpdateRoom(payload);
+        result = withLock(() => adminUpdateRoom(payload));
         break;
       case 'adminDeleteRoom':
         requireAdmin(payload);
-        result = adminDeleteRoom(payload);
+        result = withLock(() => adminDeleteRoom(payload));
         break;
       case 'adminToggleLock':
         requireAdmin(payload);
-        result = adminToggleLock(payload);
+        result = withLock(() => adminToggleLock(payload));
         break;
       case 'adminMoveBooking':
         requireAdmin(payload);
-        result = adminMoveBooking(payload);
+        result = withLock(() => adminMoveBooking(payload));
         break;
       case 'adminDeleteBooking':
         requireAdmin(payload);
-        result = adminDeleteBooking(payload);
-        break;
-      case 'adminExportCsv':
-        requireAdmin(payload);
-        result = adminExportCsv(payload);
+        result = withLock(() => adminDeleteBooking(payload));
         break;
       default:
         result = { error: 'Unknown action' };
@@ -134,7 +131,31 @@ function jsonOut(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// Only one write runs at a time, so two people can never take the last spot
+// together and row deletions can't shift under each other.
+function withLock(fn) {
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); }
+  catch (e) { return { error: 'Server is busy, please try again in a moment' }; }
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
 /* ---------------- Sheet helpers ---------------- */
+
+// Columns kept as plain text, by sheet (1-based column numbers).
+const TEXT_COLS = { Rooms: [3, 4, 5], Bookings: [3, 5] };
+
+function normTime(s) {
+  const m = String(s || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])?$/);
+  if (!m) return '';
+  let h = Number(m[1]);
+  if (m[3]) {
+    const pm = m[3].toLowerCase() === 'pm';
+    if (h === 12) h = 0;
+    if (pm) h += 12;
+  }
+  return fmtTime(h, Number(m[2]));
+}
 
 function sheet(name) {
   const sh = getSS().getSheetByName(name);
@@ -146,14 +167,18 @@ function readRows(sheetName, headers) {
   const sh = sheet(sheetName);
   const lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
-  const values = sh.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  const range = sh.getRange(2, 1, lastRow - 1, headers.length);
+  const values = range.getValues();
+  const shown = range.getDisplayValues();
   return values.map((row, i) => {
     const obj = {};
     headers.forEach((h, idx) => {
       let v = row[idx];
-      // Sheets may turn "12:30" into a time value; turn it back into text.
-      if (h === 'slot_start' && v instanceof Date) v = fmtTime(v.getHours(), v.getMinutes());
-      if (h === 'mobile' && v !== '' && v !== null) v = String(v);
+      if (h === 'start_time' || h === 'end_time' || h === 'slot_start') {
+        v = normTime(shown[i][idx]) || (v instanceof Date ? fmtTime(v.getHours(), v.getMinutes()) : String(v));
+      } else if (h === 'date' || h === 'mobile') {
+        v = shown[i][idx];
+      }
       obj[h] = v;
     });
     obj._row = i + 2; // actual sheet row number
@@ -161,20 +186,23 @@ function readRows(sheetName, headers) {
   }).filter(r => r[headers[0]] !== '' && r[headers[0]] !== null);
 }
 
+function setTextFormats(sh, sheetName, rowNumber) {
+  (TEXT_COLS[sheetName] || []).forEach(col => sh.getRange(rowNumber, col).setNumberFormat('@'));
+}
+
 function appendRow(sheetName, headers, obj) {
   const sh = sheet(sheetName);
   const row = headers.map(h => obj[h] !== undefined ? obj[h] : '');
-  const rng = sh.getRange(sh.getLastRow() + 1, 1, 1, row.length);
-  if (sheetName === BOOKINGS_SHEET) rng.setNumberFormat('@'); // keep times/mobiles as plain text
-  rng.setValues([row]);
+  const rowNumber = sh.getLastRow() + 1;
+  setTextFormats(sh, sheetName, rowNumber);
+  sh.getRange(rowNumber, 1, 1, row.length).setValues([row]);
 }
 
 function updateRow(sheetName, headers, rowNumber, obj) {
   const sh = sheet(sheetName);
   const row = headers.map(h => obj[h] !== undefined ? obj[h] : '');
-  const rng = sh.getRange(rowNumber, 1, 1, headers.length);
-  if (sheetName === BOOKINGS_SHEET) rng.setNumberFormat('@');
-  rng.setValues([row]);
+  setTextFormats(sh, sheetName, rowNumber);
+  sh.getRange(rowNumber, 1, 1, headers.length).setValues([row]);
 }
 
 function deleteRow(sheetName, rowNumber) {
@@ -269,7 +297,12 @@ function adminGetRoom(roomId) {
       booking_id: b.booking_id, name: b.name, mobile: b.mobile
     }))
   }));
+  // bookings whose time no longer matches any slot (e.g. after editing the event)
+  const orphaned = bookings.filter(b => slots.indexOf(b.slot_start) === -1).map(b => ({
+    booking_id: b.booking_id, name: b.name, mobile: b.mobile, slot_start: b.slot_start
+  }));
   return {
+    orphaned: orphaned,
     room_id: room.room_id, room_name: room.room_name, date: room.date,
     start_time: room.start_time, end_time: room.end_time,
     interval_minutes: room.interval_minutes, capacity: room.capacity,
@@ -278,15 +311,27 @@ function adminGetRoom(roomId) {
   };
 }
 
+function validateRoomFields(p) {
+  if (!p.room_name || !String(p.room_name).trim()) return 'Event name is required';
+  const s = normTime(p.start_time), e = normTime(p.end_time);
+  if (!s || !e) return 'Start and end time are required';
+  if (timeToMinutes(e) <= timeToMinutes(s)) return 'End time must be after start time';
+  if (!(Number(p.interval_minutes) >= 5)) return 'Slot length must be at least 5 minutes';
+  if (!(Number(p.capacity) >= 1)) return 'Capacity must be at least 1';
+  return null;
+}
+
 function adminCreateRoom(payload) {
+  const err = validateRoomFields(payload);
+  if (err) return { error: err };
   const room = {
     room_id: uid(),
-    room_name: payload.room_name,
+    room_name: String(payload.room_name).trim(),
     date: payload.date || '',
-    start_time: payload.start_time,
-    end_time: payload.end_time,
-    interval_minutes: payload.interval_minutes,
-    capacity: payload.capacity,
+    start_time: normTime(payload.start_time),
+    end_time: normTime(payload.end_time),
+    interval_minutes: Number(payload.interval_minutes),
+    capacity: Number(payload.capacity),
     locked: false,
     created_at: new Date().toISOString()
   };
@@ -298,9 +343,18 @@ function adminUpdateRoom(payload) {
   const rooms = readRows(ROOMS_SHEET, ROOMS_HEADERS);
   const room = rooms.find(r => r.room_id === payload.roomId);
   if (!room) return { error: 'Room not found' };
+  const merged = Object.assign({}, room);
   ['room_name', 'date', 'start_time', 'end_time', 'interval_minutes', 'capacity'].forEach(k => {
-    if (payload[k] !== undefined) room[k] = payload[k];
+    if (payload[k] !== undefined) merged[k] = payload[k];
   });
+  const err = validateRoomFields(merged);
+  if (err) return { error: err };
+  room.room_name = String(merged.room_name).trim();
+  room.date = merged.date || '';
+  room.start_time = normTime(merged.start_time);
+  room.end_time = normTime(merged.end_time);
+  room.interval_minutes = Number(merged.interval_minutes);
+  room.capacity = Number(merged.capacity);
   updateRow(ROOMS_SHEET, ROOMS_HEADERS, room._row, room);
   return { ok: true };
 }
@@ -331,14 +385,19 @@ function adminToggleLock(payload) {
 function normName(s) {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
+// Digits only; a leading 91 or 0 on a longer number is dropped -> 10 digits.
 function normMobile(s) {
-  return String(s || '').replace(/\D/g, '');
+  let d = String(s || '').replace(/\D/g, '');
+  if (d.length > 10 && (d.indexOf('91') === 0 || d.indexOf('0') === 0)) d = d.slice(-10);
+  return d;
 }
 
-function findExistingBooking(roomId, name, mobile) {
+// A person is identified by their mobile number only (names can repeat).
+function findExistingBooking(roomId, mobile) {
+  const m = normMobile(mobile);
+  if (m.length !== 10) return null;
   const bookings = readRows(BOOKINGS_SHEET, BOOKINGS_HEADERS).filter(b => b.room_id === roomId);
-  return bookings.find(b => normMobile(b.mobile) === normMobile(mobile) && normMobile(mobile) !== '')
-      || bookings.find(b => normName(b.name) === normName(name));
+  return bookings.find(b => normMobile(b.mobile) === m) || null;
 }
 
 function bookSlot(payload) {
@@ -346,35 +405,37 @@ function bookSlot(payload) {
   const room = rooms.find(r => r.room_id === payload.roomId);
   if (!room) return { error: 'Room not found' };
   if (room.locked === true || room.locked === 'TRUE') return { error: 'Bookings are closed for this event' };
-  if (!payload.name || !payload.slot_start) return { error: 'Name and slot are required' };
-  if (!payload.mobile) return { error: 'Mobile number is required' };
+  if (!payload.name || !String(payload.name).trim() || !payload.slot_start) return { error: 'Name and slot are required' };
+  const mobile = normMobile(payload.mobile);
+  if (mobile.length !== 10) return { error: 'Please enter a valid 10-digit mobile number' };
+  if (buildSlots(room).indexOf(payload.slot_start) === -1) return { error: 'That time slot does not exist' };
 
-  const existing = findExistingBooking(payload.roomId, payload.name, payload.mobile);
+  const existing = findExistingBooking(payload.roomId, mobile);
 
   const bookings = readRows(BOOKINGS_SHEET, BOOKINGS_HEADERS).filter(b => b.room_id === payload.roomId);
   const takenForSlot = bookings.filter(b => b.slot_start === payload.slot_start && (!existing || b.booking_id !== existing.booking_id));
   if (takenForSlot.length >= Number(room.capacity)) return { error: 'That slot just filled up, please pick another' };
 
+  const name = String(payload.name).trim();
   if (existing) {
     existing.slot_start = payload.slot_start;
-    existing.name = payload.name;
-    existing.mobile = payload.mobile || existing.mobile;
+    existing.name = name;
+    existing.mobile = mobile;
     existing.updated_at = new Date().toISOString();
     updateRow(BOOKINGS_SHEET, BOOKINGS_HEADERS, existing._row, existing);
     return { ok: true, booking_id: existing.booking_id, updated: true };
-  } else {
-    const booking = {
-      booking_id: uid(), room_id: payload.roomId, slot_start: payload.slot_start,
-      name: payload.name, mobile: payload.mobile || '',
-      created_at: new Date().toISOString(), updated_at: new Date().toISOString()
-    };
-    appendRow(BOOKINGS_SHEET, BOOKINGS_HEADERS, booking);
-    return { ok: true, booking_id: booking.booking_id, updated: false };
   }
+  const booking = {
+    booking_id: uid(), room_id: payload.roomId, slot_start: payload.slot_start,
+    name: name, mobile: mobile,
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+  };
+  appendRow(BOOKINGS_SHEET, BOOKINGS_HEADERS, booking);
+  return { ok: true, booking_id: booking.booking_id, updated: false };
 }
 
 function myBooking(payload) {
-  const existing = findExistingBooking(payload.roomId, payload.name, payload.mobile);
+  const existing = findExistingBooking(payload.roomId, payload.mobile);
   if (!existing) return { found: false };
   return { found: true, slot_start: existing.slot_start, booking_id: existing.booking_id };
 }
@@ -410,22 +471,4 @@ function adminDeleteBooking(payload) {
   if (!b) return { error: 'Booking not found' };
   deleteRow(BOOKINGS_SHEET, b._row);
   return { ok: true };
-}
-
-/* ---------------- Export ---------------- */
-
-function adminExportCsv(payload) {
-  const data = adminGetRoom(payload.roomId);
-  if (data.error) return data;
-  let csv = 'Time Slot,Name,Mobile\n';
-  data.slots.forEach(s => {
-    if (s.bookings.length === 0) {
-      csv += `${s.slot_start},,\n`;
-    } else {
-      s.bookings.forEach(b => {
-        csv += `${s.slot_start},"${(b.name || '').replace(/"/g, '""')}","${b.mobile || ''}"\n`;
-      });
-    }
-  });
-  return { ok: true, csv: csv, filename: (data.room_name || 'room').replace(/[^a-z0-9]+/gi, '_') + '_bookings.csv' };
 }

@@ -9,3 +9,10 @@ async function api(action, payload) {
   const res = await fetch(url, { cache: 'no-store' });
   return res.json();
 }
+
+// Digits only; drops a leading 91 or 0 on a longer number. Valid = exactly 10 digits.
+function cleanMobile(s) {
+  let d = String(s || '').replace(/\D/g, '');
+  if (d.length > 10 && (d.indexOf('91') === 0 || d.indexOf('0') === 0)) d = d.slice(-10);
+  return d;
+}

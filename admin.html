@@ -150,6 +150,7 @@ async function renderRoom(roomId, silent = false) {
     lastRoomJson = '';
     app.innerHTML = `<p class="eyebrow">Loading&hellip;</p>`;
   }
+  if (silent && document.getElementById('editPanel')) { startRoomPoll(roomId); return; }
   const r = await api('adminGetRoom', { roomId, password });
   if (silent) {
     const busy = document.activeElement && document.activeElement.tagName === 'SELECT' && app.contains(document.activeElement);
@@ -179,6 +180,7 @@ async function renderRoom(roomId, silent = false) {
       <div class="field"><label>Share this link with participants</label><input readonly value="${escapeHtml(shareUrl)}" onclick="this.select()"></div>
       <div class="toolbar-btns">
         <button id="copyBtn" class="secondary">Copy link</button>
+        <button id="editBtn" class="secondary">Edit event</button>
         <button id="lockBtn" class="secondary">${r.locked ? 'Unlock bookings' : 'Lock bookings'}</button>
         <button id="exportBtn" class="secondary">Export Excel</button>
         <button id="refreshBtn" class="secondary">Refresh</button>
@@ -191,6 +193,47 @@ async function renderRoom(roomId, silent = false) {
     try { await navigator.clipboard.writeText(shareUrl); btn.textContent = 'Copied'; }
     catch (err) { toolbar.querySelector('input').select(); btn.textContent = 'Select & copy'; }
     setTimeout(() => { btn.textContent = 'Copy link'; }, 1500);
+  });
+  toolbar.querySelector('#editBtn').addEventListener('click', () => {
+    const open = document.getElementById('editPanel');
+    if (open) { open.remove(); return; }
+    const p = el(`
+      <div class="panel" id="editPanel" style="margin-bottom:1.25rem;">
+        <div id="editBanner"></div>
+        <div class="field"><label>Event name</label><input id="e_name" type="text" value="${escapeHtml(r.room_name)}"></div>
+        <div class="field"><label>Date (optional)</label><input id="e_date" type="text" value="${escapeHtml(r.date || '')}"></div>
+        <div class="field-row">
+          <div class="field"><label>Start time</label><input id="e_start" type="time" value="${escapeHtml(r.start_time)}"></div>
+          <div class="field"><label>End time</label><input id="e_end" type="time" value="${escapeHtml(r.end_time)}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Slot length (minutes)</label><input id="e_interval" type="number" min="5" step="5" value="${escapeHtml(r.interval_minutes)}"></div>
+          <div class="field"><label>Capacity per slot</label><input id="e_capacity" type="number" min="1" value="${escapeHtml(r.capacity)}"></div>
+        </div>
+        <p class="sub" style="font-size:0.82rem;margin-bottom:1rem;">If you change times or slot length, bookings that no longer fit a slot appear at the bottom as "Unassigned" so you can move them.</p>
+        <div style="display:flex; gap:0.6rem;">
+          <button id="saveEditBtn">Save changes</button>
+          <button id="cancelEditBtn" class="ghost">Cancel</button>
+        </div>
+      </div>
+    `);
+    toolbar.after(p);
+    p.querySelector('#cancelEditBtn').addEventListener('click', () => p.remove());
+    p.querySelector('#saveEditBtn').addEventListener('click', async () => {
+      const banner = p.querySelector('#editBanner');
+      banner.innerHTML = '';
+      const res = await api('adminUpdateRoom', {
+        roomId, password,
+        room_name: p.querySelector('#e_name').value.trim(),
+        date: p.querySelector('#e_date').value.trim(),
+        start_time: p.querySelector('#e_start').value,
+        end_time: p.querySelector('#e_end').value,
+        interval_minutes: Number(p.querySelector('#e_interval').value),
+        capacity: Number(p.querySelector('#e_capacity').value)
+      });
+      if (res.error) { banner.appendChild(el(`<div class="banner error">${escapeHtml(res.error)}</div>`)); return; }
+      renderRoom(roomId);
+    });
   });
   toolbar.querySelector('#refreshBtn').addEventListener('click', () => renderRoom(roomId));
   toolbar.querySelector('#lockBtn').addEventListener('click', async () => {
@@ -319,7 +362,7 @@ function startRoomPoll(roomId) {
   clearInterval(roomPollTimer);
   roomPollTimer = setInterval(() => {
     if (document.visibilityState === 'visible') renderRoom(roomId, true);
-  }, 8000);
+  }, 12000);
 }
 
 /* ---------------- Excel export ---------------- */
@@ -353,6 +396,10 @@ function buildWorkbook(ExcelJS, r) {
       });
       row.getCell(3).numFmt = '@';
     });
+  });
+  (r.orphaned || []).forEach(b => {
+    const row = ws.addRow({ slot: 'Unassigned', name: b.name || '', mobile: String(b.mobile == null ? '' : b.mobile) });
+    row.getCell(3).numFmt = '@';
   });
   return wb;
 }
