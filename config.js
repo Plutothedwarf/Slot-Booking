@@ -6,8 +6,18 @@ async function api(action, payload) {
   const url = API_URL + '?action=' + encodeURIComponent(action)
     + '&payload=' + encodeURIComponent(JSON.stringify(payload || {}))
     + '&_ts=' + Date.now();
-  const res = await fetch(url, { cache: 'no-store' });
-  return res.json();
+  let res;
+  try {
+    res = await fetch(url, { cache: 'no-store' });
+  } catch (e) {
+    throw new Error('Could not reach the server. Check your internet connection and the API_URL in config.js.');
+  }
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error('The backend sent back an error page instead of data. In Apps Script: run setup() once and approve permissions, then Deploy > Manage deployments > edit > New version > Deploy.');
+  }
 }
 
 // Digits only; drops a leading 91 or 0 on a longer number. Valid = exactly 10 digits.

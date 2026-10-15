@@ -427,6 +427,30 @@ async function exportExcel(roomId) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+// If loading fails, say why (with a retry) instead of leaving a half-empty page.
+function showFatal(err) {
+  clearInterval(roomPollTimer);
+  app.innerHTML = '';
+  app.appendChild(el(`
+    <div>
+      <p class="eyebrow">Slot Signup Admin</p>
+      <h1>Couldn't load</h1>
+      <div class="banner error">${escapeHtml((err && err.message) || err)}</div>
+      <button id="retryBtn">Try again</button>
+    </div>
+  `));
+  app.querySelector('#retryBtn').addEventListener('click', () => location.reload());
+}
+(function guard() {
+  const wrap = (fn, quietWhen) => async function (...args) {
+    try { return await fn.apply(this, args); }
+    catch (e) { if (!(quietWhen && quietWhen(args))) showFatal(e); }
+  };
+  init = wrap(init);
+  renderRoomsList = wrap(renderRoomsList);
+  renderRoom = wrap(renderRoom, args => args[1] === true); // background refresh: stay quiet
+})();
+
 init();
 </script>
 </body>
