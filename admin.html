@@ -164,7 +164,11 @@ async function renderRoom(roomId, silent = false) {
   lastRoomJson = JSON.stringify(r);
   const scrollY = window.scrollY;
 
-  const shareUrl = location.origin + location.pathname.replace('admin.html', 'index.html') + '?room=' + roomId;
+  // Build the participant link from the folder this page lives in, whether the
+  // admin page is opened as /admin.html, /admin, or /admin/.
+  let baseDir = location.origin + location.pathname.replace(/admin(\.html)?\/?$/, '');
+  if (!baseDir.endsWith('/')) baseDir += '/';
+  const shareUrl = baseDir + 'index.html?room=' + encodeURIComponent(roomId);
 
   app.innerHTML = '';
   app.appendChild(el(`
